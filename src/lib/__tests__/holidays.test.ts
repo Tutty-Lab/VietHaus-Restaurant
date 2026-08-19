@@ -64,7 +64,7 @@ describe("Scheduler mit Feiertagen (Dezember 2026)", () => {
     const result = validateSchedule(SAMPLE_EMPLOYEES, shifts);
     expect(result.valid).toBe(true);
     const total = shifts.reduce((s, x) => s + x.paidMinutes, 0);
-    expect(total).toBe(717 * 60);
+    expect(total).toBe(606 * 60);
   });
 
   it("plant Schichten an Feiertagen im 11:30–22:00-Fenster", () => {

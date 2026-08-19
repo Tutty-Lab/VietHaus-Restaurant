@@ -25,27 +25,16 @@ export function minutesToTime(totalMinutes: number): string {
 }
 
 /**
- * Pausenregel (Vorgabe des Chefs, VietHaus Restaurant):
- * „Das Lokal macht keine Pause, aber nach spätestens 4 Stunden muss die
- * Kraft eine Pause nehmen."
+ * Pausenregel (Vorgabe des Chefs, VietHaus Restaurant): "Không có pause" –
+ * es wird KEINE Pause von der Arbeitszeit abgezogen. Anwesenheit = bezahlte
+ * Zeit, pauseMinutes ist immer 0.
  *
- *   bis 4 h  -> keine Pause
- *   über 4 h -> 30 Minuten
- *   ab 9 h   -> 45 Minuten (gesetzliches Minimum nach ArbZG §4)
- *
- * Der Betrieb ist damit strenger als das Gesetz, das erst über 6 h eine Pause
- * verlangt – so gewollt.
- *
- * Die Pause kommt ZUSÄTZLICH zur bezahlten Zeit: presence = paid + pause.
- * Eine 9-h-Schicht belegt damit 9,75 h Anwesenheit und passt noch in das
- * Fenster 11:30–22:00 (10,5 h).
- *
- * Alle Zeit-/Schichtberechnungen leiten sich von dieser einen Funktion ab –
- * eine andere Pausenstaffel zu fahren betrifft nur diese Stelle.
+ * Hinweis: Damit steht auf dem Stundenzettel keine Pause. Das ist die Ansage
+ * des Betriebs; das Arbeitszeitgesetz verlangt ab mehr als 6 Stunden an sich
+ * 30 Minuten. Eine spätere Umstellung betrifft nur diese eine Funktion – alle
+ * Zeit- und Schichtberechnungen leiten sich davon ab.
  */
-export function calculatePause(paidMinutes: number): number {
-  if (paidMinutes >= 9 * 60) return 45;
-  if (paidMinutes > 4 * 60) return 30;
+export function calculatePause(_paidMinutes: number): number {
   return 0;
 }
 

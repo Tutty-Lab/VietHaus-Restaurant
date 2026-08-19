@@ -6,7 +6,6 @@ import {
   MAX_MINIJOB_EMPLOYEES,
   MAX_STAMM_EMPLOYEES,
   MINIJOB_MAX_MONTHLY_HOURS,
-  MINIJOB_MAX_WEEKLY_HOURS,
   type Employee,
   type Shift,
 } from "../types";
@@ -66,8 +65,7 @@ export function validateSchedule(
       errors.push({
         employeeId: emp.id,
         message:
-          `${emp.name}: Minijob ${hours}h/tháng vượt trần ${MINIJOB_MAX_MONTHLY_HOURS}h ` +
-          `(${MINIJOB_MAX_WEEKLY_HOURS}h/tuần).`,
+          `${emp.name}: Minijob ${hours}h/tháng vượt ${MINIJOB_MAX_MONTHLY_HOURS}h theo hợp đồng.`,
       });
     }
   }

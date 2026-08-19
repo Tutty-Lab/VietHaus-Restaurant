@@ -13,9 +13,9 @@ import { createClient } from "@supabase/supabase-js";
  * arbeiten kann. Ohne diese Möglichkeit zeigt jede lokale Entwicklungsumgebung
  * zwangsläufig auf die Produktivdaten der Filiale – und ein Klick beim Testen
  * ändert dann echte Dienstpläne. In Produktion ist die Variable nicht gesetzt,
- * dort gilt weiterhin "mrson".
+ * dort gilt weiterhin "viethaus".
  */
-export const STORE_ID = import.meta.env.VITE_STORE_ID || "mrson";
+export const STORE_ID = import.meta.env.VITE_STORE_ID || "viethaus";
 
 // Beide Schreibweisen akzeptieren: VITE_* (selbst gesetzt) und NEXT_PUBLIC_*
 // (so legt die Vercel-Supabase-Integration die öffentlichen Schlüssel an).

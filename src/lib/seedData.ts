@@ -58,8 +58,8 @@ const AUGUST_2026: Employee[] = [
   makeEmployee("vz-1", "Vollzeit 1", "VOLLZEIT", 200),
   makeEmployee("vz-2", "Vollzeit 2", "VOLLZEIT", 160),
   makeEmployee("vz-3", "Vollzeit 3", "VOLLZEIT", 160),
-  makeEmployee("mini-1", "Mini 1", "MINIJOB", 52),
-  makeEmployee("mini-2", "Mini 2", "MINIJOB", 52),
+  makeEmployee("mini-1", "Mini 1", "MINIJOB", 43),
+  makeEmployee("mini-2", "Mini 2", "MINIJOB", 43),
 ];
 
 /** Die drei Monate, ältester zuerst. */

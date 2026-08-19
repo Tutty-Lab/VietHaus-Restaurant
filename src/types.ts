@@ -23,11 +23,13 @@ export const MAX_STAMM_EMPLOYEES = 3;
 export const MAX_MINIJOB_EMPLOYEES = 2;
 
 /**
- * Minijob: höchstens 12 Stunden pro Woche, gerechnet wird aber im Monat.
- * 12 h x 52/12 Wochen = 52 h im Monat.
+ * Minijob bei VietHaus: 43 Stunden im Monat laut Vertrag.
+ *
+ * Anders als anderswo ist das hier KEINE aus Wochenstunden abgeleitete Decke,
+ * sondern die vertraglich vereinbarte Menge, die der Betrieb genannt hat. Wer
+ * mehr einträgt, bekommt einen Hinweis in der Mitarbeiterliste.
  */
-export const MINIJOB_MAX_WEEKLY_HOURS = 12;
-export const MINIJOB_MAX_MONTHLY_HOURS = Math.floor((MINIJOB_MAX_WEEKLY_HOURS * 52) / 12);
+export const MINIJOB_MAX_MONTHLY_HOURS = 43;
 
 export type ShiftType = "EARLY" | "LATE" | "CUSTOM";
 

@@ -3,18 +3,14 @@ import { chooseShiftHours, maxShiftHoursForWindow } from "../scheduler";
 
 describe("maxShiftHoursForWindow", () => {
   it("rechnet mit Anwesenheit inkl. Pause, nicht mit bezahlter Zeit", () => {
-    // Anwesenheit: 3h=180, 4h=240, 5h=330, 6h=390, 7h=450, 8h=510, 9h=585.
-    expect(maxShiftHoursForWindow(630)).toBe(9); // 11:30–22:00, die 9-h-Schicht passt
-    expect(maxShiftHoursForWindow(585)).toBe(9); // exakt die Anwesenheit der 9-h-Schicht
-    expect(maxShiftHoursForWindow(584)).toBe(8);
-    expect(maxShiftHoursForWindow(510)).toBe(8);
-    expect(maxShiftHoursForWindow(509)).toBe(7);
-    expect(maxShiftHoursForWindow(450)).toBe(7);
-    expect(maxShiftHoursForWindow(449)).toBe(6);
-    expect(maxShiftHoursForWindow(390)).toBe(6);
-    expect(maxShiftHoursForWindow(389)).toBe(5); // 5 h = 300 + 30 Pause = 330
-    expect(maxShiftHoursForWindow(330)).toBe(5);
-    expect(maxShiftHoursForWindow(329)).toBe(4); // 4 h ist die längste pausenfreie
+    // Ohne Pause ist Anwesenheit = bezahlte Zeit: 9h=540, 8h=480, ... 3h=180.
+    expect(maxShiftHoursForWindow(630)).toBe(9); // 11:30–22:00
+    expect(maxShiftHoursForWindow(540)).toBe(9); // exakt 9 h
+    expect(maxShiftHoursForWindow(539)).toBe(8);
+    expect(maxShiftHoursForWindow(480)).toBe(8);
+    expect(maxShiftHoursForWindow(479)).toBe(7);
+    expect(maxShiftHoursForWindow(5 * 60)).toBe(5);
+    expect(maxShiftHoursForWindow(4 * 60)).toBe(4);
     expect(maxShiftHoursForWindow(3 * 60)).toBe(3);
     expect(maxShiftHoursForWindow(3 * 60 - 1)).toBe(0); // zu kurz für 3 h
   });

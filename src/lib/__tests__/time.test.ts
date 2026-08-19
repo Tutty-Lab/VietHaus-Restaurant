@@ -28,18 +28,10 @@ describe("timeToMinutes / minutesToTime", () => {
 });
 
 describe("calculatePause", () => {
-  it("bis einschließlich 4 h ohne Pause", () => {
+  it("ohne Pause: presence = paid", () => {
     expect(calculatePause(3 * 60)).toBe(0);
-    expect(calculatePause(4 * 60)).toBe(0);
-  });
-  it("über 4 h bis unter 9 h sind es 30 Minuten", () => {
-    expect(calculatePause(4 * 60 + 1)).toBe(30);
-    expect(calculatePause(5 * 60)).toBe(30);
-    expect(calculatePause(8 * 60)).toBe(30);
-    expect(calculatePause(9 * 60 - 1)).toBe(30);
-  });
-  it("ab 9 h sind es 45 Minuten", () => {
-    expect(calculatePause(9 * 60)).toBe(45);
+    expect(calculatePause(6 * 60)).toBe(0);
+    expect(calculatePause(9 * 60)).toBe(0);
   });
 });
 
@@ -49,16 +41,16 @@ describe("calculatePaidMinutes / presenceFromPaid", () => {
     expect(calculatePaidMinutes(720, 1200, 0)).toBe(480);
     // 16:00-20:00, keine Pause => 4 h
     expect(calculatePaidMinutes(960, 1200, 0)).toBe(240);
-    // 11:30-20:30 mit 30 min Pause => 8,5 h bezahlt
-    expect(calculatePaidMinutes(690, 1230, 30)).toBe(510);
+    // 11:30-20:30 ohne Pause => 9 h bezahlt
+    expect(calculatePaidMinutes(690, 1230, 0)).toBe(540);
   });
   it("presence = paid + Pause", () => {
     expect(presenceFromPaid(180)).toBe(180); // 3 h, keine Pause
     expect(presenceFromPaid(240)).toBe(240); // 4 h, keine Pause
-    expect(presenceFromPaid(300)).toBe(330); // 5 h + 30 min
-    expect(presenceFromPaid(420)).toBe(450); // 7 h + 30 min
-    expect(presenceFromPaid(480)).toBe(510); // 8 h + 30 min
-    expect(presenceFromPaid(540)).toBe(585); // 9 h + 45 min = 9,75 h Anwesenheit
+    expect(presenceFromPaid(300)).toBe(300); // 5 h
+    expect(presenceFromPaid(420)).toBe(420); // 7 h
+    expect(presenceFromPaid(480)).toBe(480); // 8 h
+    expect(presenceFromPaid(540)).toBe(540); // 9 h – ohne Pause
   });
 });
 

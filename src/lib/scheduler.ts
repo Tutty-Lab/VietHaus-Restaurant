@@ -451,15 +451,26 @@ export function chooseShiftHours(
     const onPace = valid.filter((h) => h >= needHours).sort((a, b) => a - b);
     if (onPace.length === 0) return valid[valid.length - 1];
 
-    // Die KÜRZESTE Länge, die das Tempo noch hält.
+    // Ohne Zufallsquelle läuft der strenge Rückfallversuch (attempt(false)).
+    // Dort zählt nur noch, dass das Soll überhaupt aufgeht: die LÄNGSTE Länge
+    // braucht die wenigsten Tage und hat deshalb die besten Chancen.
+    //
+    // Diese Unterscheidung ist der eigentliche Sinn des Rückfalls. Fehlte sie,
+    // verhielte sich der strenge Versuch exakt wie die vorherigen fünf – das
+    // Sicherheitsnetz wäre keins mehr. Genau daran scheiterte der Plan bei
+    // einem Laden, der SIEBEN Tage offen hat: dort erzwingt die Sechs-Tage-
+    // Regel Lücken, das Soll geht knapp nicht auf, und ohne den Rückfall gab
+    // es gar keinen Plan.
+    if (!rng) return onPace[onPace.length - 1];
+
+    // Im Normalfall die KÜRZESTE Länge, die das Tempo noch hält.
     //
     // needHours ist bereits das Mittel, das nötig ist, um das Soll bis
     // Monatsende genau aufzubrauchen. Wer länger arbeitet als dieses Mittel,
     // ist vorzeitig fertig – und steht dem Laden die restlichen Tage nicht
-    // mehr zur Verfügung. Bei kleinen Deputaten fällt das brutal auf: 55 h in
-    // 9-h-Diensten sind nach sechs Tagen weg, in 5-h-Diensten reichen sie für
-    // elf. Früher stand hier „der längere von zwei Würfen", also genau der
-    // umgekehrte Effekt.
+    // mehr zur Verfügung. Bei kleinen Deputaten fällt das brutal auf: 43 h in
+    // 9-h-Diensten sind nach fünf Tagen weg, in 5-h-Diensten reichen sie für
+    // neun.
     return onPace[0];
   };
 
@@ -570,23 +581,33 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
   const worked = state.worked.get(employee.id)!;
   const weekendCount = state.weekendCount.get(employee.id) ?? 0;
 
-  // Erst zählen, wie viele Tage überhaupt noch in Frage kommen. Daraus ergibt
-  // sich das nötige Tempo (Stunden je verbleibendem Tag) – ohne das würde die
-  // zufällige Längenwahl das Monats-Soll reißen.
-  let daysLeft = 0;
+  // Wie viele Tage kann dieser Mitarbeiter ab jetzt WIRKLICH noch arbeiten?
+  //
+  // Greedy von vorn durchspielen und dabei die Sechs-Tage-Regel mitführen –
+  // dieselbe Rechnung wie in monthCapacity, nur für diese Person und ihren
+  // aktuellen Stand. Das Ergebnis ist eine echte Obergrenze, kein Schätzwert.
+  //
+  // Vorher stand hier `daysLeft * 0.9`, ein pauschaler Sicherheitsabschlag von
+  // zehn Prozent. Der reicht, solange der Laden einen festen Ruhetag hat: der
+  // geschlossene Tag unterbricht die Kette, und fast jeder offene Tag bleibt
+  // belegbar. Hat der Laden gar keinen Ruhetag, sind es aber höchstens sechs
+  // von je sieben Tagen, also 85,7 Prozent – die Schätzung war zu optimistisch,
+  // das Tempo dadurch zu langsam, und am Monatsende blieben Stunden übrig, für
+  // die es keinen zulässigen Tag mehr gab. Der Plan scheiterte dann komplett.
+  let usableDays = 0;
+  const trial = new Set(worked);
   for (const isoDate of state.dates) {
-    if (worked.has(isoDate)) continue;
+    if (trial.has(isoDate)) continue;
     const day = state.dayOf(isoDate);
     if (day.closed) continue;
     if (maxShiftHoursForWindow(windowLength(day)) === 0) continue;
-    if (consecutiveRunLengthWith(worked, isoDate) > 6) continue;
-    daysLeft += 1;
+    if (consecutiveRunLengthWith(trial, isoDate) > 6) continue;
+    trial.add(isoDate); // belegt – zählt für die Kette der folgenden Tage mit
+    usableDays += 1;
   }
-  // daysLeft ist eine Obergrenze: greedy belegt nie wirklich JEDEN erlaubten
-  // Tag, weil die 6-Tage-Regel Lücken erzwingt. Ohne Sicherheitsabschlag wählt
-  // der Zufall zu kurze Schichten und das Soll geht am Monatsende nicht auf.
-  const usableDays = Math.max(1, Math.floor(daysLeft * 0.9));
-  const needHours = daysLeft > 0 ? Math.ceil(remaining / 60 / usableDays) : MAX_SHIFT_HOURS;
+
+  const needHours =
+    usableDays > 0 ? Math.ceil(remaining / 60 / usableDays) : MAX_SHIFT_HOURS;
 
   let bestDate: string | null = null;
   let bestHours = 0;
@@ -613,7 +634,13 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     if (bodiesMissing > 1) {
       const leftHours = (state.rawTarget.get(isoDate)! - dsNow.totalPaid) / 60;
       const share = Math.floor(leftHours / bodiesMissing);
-      if (share >= 3) maxHours = Math.min(maxHours, share);
+      // Der Deckel darf das EIGENE Tempo nie unterschreiten. Sonst macht er
+      // den Monat unplanbar: braucht ein Tag drei Dienste (bei 11:30-22:00 und
+      // einer Abendspitze schafft keine einzelne Schicht beides, Öffnen und
+      // 21 Uhr), dann ist ein Drittel der Tagesstunden schnell weniger, als die
+      // Kraft im Schnitt pro Tag braucht - und ihr Soll geht nie auf.
+      const limit = Math.max(share, needHours);
+      if (limit >= 3) maxHours = Math.min(maxHours, limit);
     }
 
     // Solange der Tag noch nicht genug LANGE Dienste hat, um die Stoßzeit zu
