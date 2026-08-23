@@ -134,19 +134,6 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
                     <span className="text-slate-400">h</span>
                   </div>
                 </label>
-                <label className="flex items-center gap-2 sm:pb-1.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={emp.saved === true}
-                    onChange={(e) => updateEmployee(emp.id, { saved: e.target.checked })}
-                    className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <span
-                    className={`text-sm ${emp.saved ? "text-emerald-700 font-medium" : "text-slate-500"}`}
-                  >
-                    Lưu
-                  </span>
-                </label>
                 <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-end gap-1 sm:w-24">
                   <span className={`text-xs ${info.ok ? "text-slate-500" : "text-rose-600"}`}>
                     {info.text}

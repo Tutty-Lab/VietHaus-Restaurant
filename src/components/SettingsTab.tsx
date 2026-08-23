@@ -108,7 +108,7 @@ function WindowRow({
 }
 
 export function SettingsTab({ store }: { store: UseScheduleReturn }) {
-  const { schedule, updateMeta, upsertOverride, removeOverride } = store;
+  const { schedule, updateMeta, upsertOverride, removeOverride , changePassword, hasOwnPassword } = store;
   const years = Array.from({ length: 7 }, (_, i) => new Date().getFullYear() - 1 + i);
 
   // ---- Ngày đặc biệt (Ausnahmen) ----
@@ -403,6 +403,108 @@ export function SettingsTab({ store }: { store: UseScheduleReturn }) {
         )}
       </section>
 
+      <PasswordSection hasOwnPassword={hasOwnPassword} onChange={changePassword} />
     </div>
+  );
+}
+
+/**
+ * Passwort der Filiale ändern.
+ *
+ * Steht in den Einstellungen, weil es zum Laden gehört und nicht zu einem
+ * einzelnen Monat. Das alte Passwort wird abgefragt, damit nicht jeder, der
+ * gerade vor dem offenen Tablet steht, die Filiale aussperren kann.
+ */
+function PasswordSection({
+  hasOwnPassword,
+  onChange,
+}: {
+  hasOwnPassword: boolean;
+  onChange: (alt: string, neu: string) => Promise<string | null>;
+}) {
+  const [alt, setAlt] = useState("");
+  const [neu, setNeu] = useState("");
+  const [wieder, setWieder] = useState("");
+  const [fehler, setFehler] = useState<string | null>(null);
+  const [fertig, setFertig] = useState(false);
+  const [laeuft, setLaeuft] = useState(false);
+
+  async function absenden(e: React.FormEvent) {
+    e.preventDefault();
+    setFehler(null);
+    setFertig(false);
+    if (neu !== wieder) {
+      setFehler("Hai ô mật khẩu mới không giống nhau.");
+      return;
+    }
+    setLaeuft(true);
+    const problem = await onChange(alt, neu);
+    setLaeuft(false);
+    if (problem) {
+      setFehler(problem);
+      return;
+    }
+    setAlt("");
+    setNeu("");
+    setWieder("");
+    setFertig(true);
+  }
+
+  return (
+    <section className="rounded-lg bg-white border border-slate-200 p-4 sm:p-5 shadow-sm">
+      <h2 className="text-base font-semibold text-slate-900">Mật khẩu vào ứng dụng</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Mật khẩu này chỉ để che mắt người ngoài khi máy để mở ở quán, không phải bảo mật
+        thật. Đổi ở đây thì mọi máy của quán đều dùng mật khẩu mới.
+      </p>
+      {!hasOwnPassword && (
+        <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Quán đang dùng <b>mật khẩu mặc định</b>. Nên đổi sang mật khẩu riêng.
+        </p>
+      )}
+
+      <form onSubmit={absenden} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+        <label className="flex flex-col sm:w-44">
+          <span className="text-xs text-slate-600 mb-1">Mật khẩu hiện tại</span>
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={alt}
+            onChange={(e) => setAlt(e.target.value)}
+            className={`${inputClass} w-full`}
+          />
+        </label>
+        <label className="flex flex-col sm:w-44">
+          <span className="text-xs text-slate-600 mb-1">Mật khẩu mới</span>
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={neu}
+            onChange={(e) => setNeu(e.target.value)}
+            className={`${inputClass} w-full`}
+          />
+        </label>
+        <label className="flex flex-col sm:w-44">
+          <span className="text-xs text-slate-600 mb-1">Nhập lại mật khẩu mới</span>
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={wieder}
+            onChange={(e) => setWieder(e.target.value)}
+            className={`${inputClass} w-full`}
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={laeuft || !alt || !neu}
+          className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40"
+        >
+          {laeuft ? "Đang lưu…" : "Đổi mật khẩu"}
+        </button>
+      </form>
+
+      {fehler && <p className="mt-2 text-sm text-rose-600">{fehler}</p>}
+      {fertig && <p className="mt-2 text-sm text-emerald-700">Đã đổi mật khẩu.</p>}
+    </section>
   );
 }

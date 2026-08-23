@@ -6,9 +6,10 @@ export function LockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [value, setValue] = useState("");
   const [error, setError] = useState(false);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (login(value)) {
+    // Das Passwort wird gehasht verglichen, deshalb asynchron.
+    if (await login(value)) {
       onUnlock();
     } else {
       setError(true);

@@ -9,6 +9,12 @@ const STORAGE_KEY = "stundenzettel-app:v1";
 
 export type PersistedState = {
   schedule: Schedule;
+  /**
+   * SHA-256 des Filial-Passworts. Fehlt es, gilt das Startpasswort.
+   * Liegt hier und nicht im Schedule, weil es zum LADEN gehört und nicht zu
+   * einem einzelnen Monat – beim Monatswechsel darf es nicht verschwinden.
+   */
+  passwordHash?: string;
   /** Snapshot des zuletzt generierten Plans (für Reset). */
   originalShifts: Shift[];
 };
