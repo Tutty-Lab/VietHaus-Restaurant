@@ -73,12 +73,20 @@ werden direkt aus den Konstanten gerendert und können daher nicht veralten.
 
 - Max. **9 bezahlte Stunden** pro Tag, **ein Dienst** pro Mitarbeiter und Tag.
 - Höchstens **6 aufeinanderfolgende** Arbeitstage.
-- **Pause** (`calculatePause`), Vorgabe des Betriebs „nach spätestens 4 Stunden
-  muss die Kraft eine Pause nehmen": bis 4 h = 0 Min, über 4 h = 30 Min, ab 9 h
-  = 45 Min (ArbZG-Minimum). Strenger als das Gesetz, das erst ab über 6 h eine
-  Pause verlangt. Die Pause zählt **nicht** zum Soll, verlängert aber die
-  Anwesenheit: `presence = paid + pause`. Eine 9-h-Schicht belegt damit 9,75 h
-  und passt in das Fenster 11:30–22:00 (10,5 h).
+- **Pause** (`calculatePause`), Vorgabe des Betriebs: über 6 h = 30 Min, ab
+  8 h = 60 Min. Das liegt ÜBER dem gesetzlichen Minimum – § 4 ArbZG verlangt
+  über 6 h nur 30 Min und über 9 h 45 Min (Bundesrecht, nicht je Bundesland
+  verschieden). Mehr Pause zu geben ist erlaubt, weniger nicht. Die Pause zählt
+  **nicht** zum Soll, verlängert aber die Anwesenheit:
+  `presence = paid + pause`. Eine 9-h-Schicht belegt damit 10 h, eine
+  8-h-Schicht 9 h – beides passt in das Fenster 11:30–22:00 (10,5 h). EIN
+  Dienst kann damit aber nicht mehr gleichzeitig auf- und zusperren; dafür
+  braucht es zwei.
+- **Der Laden ist nie offen und unbesetzt.** Geprüft wird jede Minute der
+  Öffnungszeit, nicht nur Auf- und Zusperren (`uncoveredMinutes`,
+  `dayDefect`). Vorher genügten zwei Dienste an den beiden Enden – mit der
+  neuen Pause begann der erste Dienst um 12:00, während der Laden schon um
+  11:30 offen war.
 - Schichtlängen: **3 bis 9 Stunden**. Vollzeit bekommt 4..9 h, Teilzeit 3..9 h.
   Etwa jede zehnte Schicht wird bewusst auf 4–5 h gekürzt
   (`SHORT_SHIFT_CHANCE`), damit die Pläne nicht mechanisch aussehen – aber nur,

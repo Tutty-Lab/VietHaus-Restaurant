@@ -10,7 +10,8 @@ import { analyzeSchedule } from "../analyze";
 import { validateSchedule } from "../validation";
 import { maxConsecutiveRun } from "../consecutive";
 import { SEED_MONTHS, totalTargetHours } from "../seedData";
-import { DEFAULT_WORK_HOURS } from "../workHours";
+import { publicHolidays } from "../holidays";
+import { DEFAULT_WORK_HOURS, resolveDay } from "../workHours";
 import { calculatePause } from "../time";
 import { WEEKDAY_SHORT_DE } from "../demand";
 
@@ -32,6 +33,35 @@ const runs = SEED_MONTHS.map((seed) => {
 });
 
 describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
+  it("lässt den Laden nie offen und unbesetzt", () => {
+    // Geprüft wurde früher nur, ob jemand aufsperrt und jemand zusperrt. Was
+    // dazwischen passiert, hat niemand gefragt – zwei kurze Dienste an den
+    // beiden Enden kamen damit durch, und in der Mitte stand der Laden offen
+    // und leer. Aufgefallen ist es erst, als eine andere Regel die Dienste
+    // anders verteilte; der Fehler lag da schon lange drin.
+    const holidays = publicHolidays(seed.year);
+    const proDatum = new Map<string, typeof shifts>();
+    for (const s of shifts) {
+      const l = proDatum.get(s.date);
+      if (l) l.push(s);
+      else proDatum.set(s.date, [s]);
+    }
+
+    const luecken: string[] = [];
+    for (const [datum, amTag] of proDatum) {
+      const day = resolveDay(DEFAULT_WORK_HOURS, datum, holidays, {});
+      if (day.closed) continue;
+      for (let t = day.window.startMinutes; t < day.window.endMinutes; t++) {
+        const da = amTag.filter((s) => s.startMinutes <= t && s.endMinutes > t).length;
+        if (da === 0) {
+          luecken.push(`${datum} ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`);
+          break;
+        }
+      }
+    }
+    expect(luecken).toEqual([]);
+  });
+
   it("trifft die Summe der Sollstunden exakt", () => {
     expect(analysis.totalPaidHours).toBe(totalTargetHours(seed));
   });

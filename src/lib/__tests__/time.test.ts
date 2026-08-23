@@ -28,10 +28,24 @@ describe("timeToMinutes / minutesToTime", () => {
 });
 
 describe("calculatePause", () => {
-  it("ohne Pause: presence = paid", () => {
+  it("Staffel 0 / 30 / 60 nach Vorgabe des Betriebs", () => {
     expect(calculatePause(3 * 60)).toBe(0);
-    expect(calculatePause(6 * 60)).toBe(0);
-    expect(calculatePause(9 * 60)).toBe(0);
+    expect(calculatePause(6 * 60)).toBe(0); // genau 6 h: noch keine Pause
+    expect(calculatePause(6 * 60 + 1)).toBe(30); // ab MEHR als 6 h
+    expect(calculatePause(7 * 60)).toBe(30);
+    expect(calculatePause(8 * 60)).toBe(60); // ab 8 h die volle Stunde
+    expect(calculatePause(9 * 60)).toBe(60);
+  });
+
+  it("liegt nie unter dem gesetzlichen Minimum", () => {
+    // § 4 ArbZG: über 6 h mindestens 30 min, über 9 h mindestens 45 min.
+    // Mehr geben ist erlaubt, weniger nicht – das darf keine spätere Änderung
+    // versehentlich unterschreiten.
+    for (let h = 3; h <= 9; h++) {
+      const paid = h * 60;
+      const minimum = paid > 9 * 60 ? 45 : paid > 6 * 60 ? 30 : 0;
+      expect(calculatePause(paid)).toBeGreaterThanOrEqual(minimum);
+    }
   });
 });
 
@@ -48,9 +62,10 @@ describe("calculatePaidMinutes / presenceFromPaid", () => {
     expect(presenceFromPaid(180)).toBe(180); // 3 h, keine Pause
     expect(presenceFromPaid(240)).toBe(240); // 4 h, keine Pause
     expect(presenceFromPaid(300)).toBe(300); // 5 h
-    expect(presenceFromPaid(420)).toBe(420); // 7 h
-    expect(presenceFromPaid(480)).toBe(480); // 8 h
-    expect(presenceFromPaid(540)).toBe(540); // 9 h – ohne Pause
+    expect(presenceFromPaid(360)).toBe(360); // 6 h – genau an der Grenze
+    expect(presenceFromPaid(420)).toBe(450); // 7 h + 30 min
+    expect(presenceFromPaid(480)).toBe(540); // 8 h + 60 min = 9 h Anwesenheit
+    expect(presenceFromPaid(540)).toBe(600); // 9 h + 60 min = 10 h
   });
 });
 

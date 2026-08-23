@@ -290,6 +290,10 @@ export function cheapestPeakCover(window: DayWindow): number[] {
   const usable = ALL_HOURS.filter((h) => presenceFromPaid(h * 60) <= span);
 
   let found: number[] = [];
+  // Erst lückenlos suchen; findet sich nichts, noch einmal mit der alten,
+  // schwächeren Anforderung (nur auf- und zusperren).
+  for (const streng of [true, false]) {
+    if (found.length > 0) break;
   // Nach Anzahl der Dienste aufsteigend, innerhalb nach Gesamtstunden.
   for (let count = 1; count <= 4 && found.length === 0; count++) {
     let bestTotal = Number.POSITIVE_INFINITY;
@@ -299,7 +303,7 @@ export function cheapestPeakCover(window: DayWindow): number[] {
     const recurse = (from: number) => {
       if (combo.length === count) {
         const total = combo.reduce((a, b) => a + b, 0);
-        if (total < bestTotal && canCoverDay(window, combo)) {
+        if (total < bestTotal && canCoverDay(window, combo, streng)) {
           bestTotal = total;
           best = [...combo];
         }
@@ -315,13 +319,51 @@ export function cheapestPeakCover(window: DayWindow): number[] {
 
     if (best) found = (best as number[]).slice().sort((a, b) => b - a);
   }
+  }
 
   coverCache.set(key, found);
   return found;
 }
 
 /** Lässt sich der Tag mit genau diesen Längen vollständig abdecken? */
-function canCoverDay(window: DayWindow, hours: number[]): boolean {
+/**
+ * Minuten, in denen der Laden GEÖFFNET ist, aber niemand da.
+ *
+ * Klingt selbstverständlich, war es aber nicht: geprüft wurde bisher nur, ob
+ * jemand aufsperrt und jemand zusperrt. Was dazwischen passiert, hat niemand
+ * gefragt – zwei kurze Dienste an den beiden Enden kamen damit durch, und in
+ * der Mitte stand der Laden offen und leer.
+ */
+function uncoveredMinutes(shifts: Shift[], window: DayWindow): number {
+  const stuecke = shifts
+    .filter((s) => s.endMinutes > window.startMinutes && s.startMinutes < window.endMinutes)
+    .map((s) => [
+      Math.max(s.startMinutes, window.startMinutes),
+      Math.min(s.endMinutes, window.endMinutes),
+    ] as const)
+    .sort((x, y) => x[0] - y[0]);
+
+  let offen = 0;
+  let bisJetzt = window.startMinutes;
+  for (const [von, bis] of stuecke) {
+    if (von > bisJetzt) offen += von - bisJetzt;
+    if (bis > bisJetzt) bisJetzt = bis;
+    if (bisJetzt >= window.endMinutes) break;
+  }
+  if (bisJetzt < window.endMinutes) offen += window.endMinutes - bisJetzt;
+  return offen;
+}
+
+/**
+ * Gesamtnote eines Tages, je kleiner desto besser: erst die Stoßzeit, dann die
+ * Lücken. Eine fehlende Person in der Spitze wiegt mehr als jede Lücke – aber
+ * eine Lücke wiegt eben NICHT null, und genau das war der Fehler.
+ */
+function dayDefect(shifts: Shift[], window: DayWindow): number {
+  return peakDeficit(shifts, window) * 10000 + uncoveredMinutes(shifts, window);
+}
+
+function canCoverDay(window: DayWindow, hours: number[], luckenlos = true): boolean {
   const probe: Shift[] = hours.map((h, i) => ({
     id: `probe-${i}`,
     employeeId: `probe-${i}`,
@@ -338,7 +380,12 @@ function canCoverDay(window: DayWindow, hours: number[]): boolean {
 
   const opens = probe.some((s) => s.startMinutes === window.startMinutes);
   const closes = probe.some((s) => s.endMinutes === window.endMinutes);
-  return opens && closes && peakDeficit(probe, window) === 0;
+  if (!opens || !closes) return false;
+  // Notausgang: gäbe es zu einer Fensterform überhaupt keine lückenlose
+  // Lösung, käme sonst eine LEERE Abdeckung heraus – und die schaltet die
+  // Besetzungslogik komplett ab, was schlimmer wäre als das Problem.
+  if (!luckenlos) return peakDeficit(probe, window) === 0;
+  return dayDefect(probe, window) === 0;
 }
 
 /** Bezahlte Stunden aller Dienste eines Tages. */
@@ -1232,7 +1279,7 @@ function candidateStarts(shift: Shift, window: DayWindow): number[] {
  */
 function layoutDayForPeaks(window: DayWindow, onDay: Shift[]): void {
   if (onDay.length < 2) return;
-  if (peakDeficit(onDay, window) === 0) return; // schon gut
+  if (dayDefect(onDay, window) === 0) return; // schon gut
   arrangeForPeaks(window, onDay);
 }
 
@@ -1252,7 +1299,7 @@ function arrangeForPeaks(window: DayWindow, onDay: Shift[]): void {
 
   let bestStarts = [...starts];
   // Eine Ausgangslage ohne Auf- oder Zusperrer zählt nicht als Lösung.
-  let bestDeficit = opensAndCloses() ? peakDeficit(onDay, window) : Number.POSITIVE_INFINITY;
+  let bestDeficit = opensAndCloses() ? dayDefect(onDay, window) : Number.POSITIVE_INFINITY;
 
   for (let i = 0; i < onDay.length && bestDeficit > 0; i++) {
     // i === j ist ausdrücklich erlaubt: ein Dienst, der das ganze Fenster
@@ -1276,7 +1323,7 @@ function arrangeForPeaks(window: DayWindow, onDay: Shift[]): void {
         let pickDeficit = Number.POSITIVE_INFINITY;
         for (const c of candidateStarts(onDay[k], window)) {
           moveShiftTo(onDay[k], c);
-          const d = peakDeficit(onDay, window);
+          const d = dayDefect(onDay, window);
           if (d < pickDeficit) {
             pickDeficit = d;
             pick = c;
@@ -1285,7 +1332,7 @@ function arrangeForPeaks(window: DayWindow, onDay: Shift[]): void {
         moveShiftTo(onDay[k], pick);
       }
 
-      const deficit = peakDeficit(onDay, window);
+      const deficit = dayDefect(onDay, window);
       if (deficit < bestDeficit) {
         bestDeficit = deficit;
         bestStarts = onDay.map((s) => s.startMinutes);

@@ -90,6 +90,10 @@ export function DocsTab() {
           <li>Mỗi người <b>một ca mỗi ngày</b>.</li>
           <li>Không làm quá <b>6 ngày liên tiếp</b>.</li>
           <li>
+            <b>Quán mở là phải có người</b> — không phút nào trong giờ mở cửa mà quán
+            trống. Trước đây app chỉ kiểm tra có người mở cửa và có người đóng cửa.
+          </li>
+          <li>
             Mỗi người phải đạt <b>đúng định mức tháng</b> (Sollstunden) — không thừa, không thiếu.
           </li>
           <li>
@@ -162,8 +166,14 @@ export function DocsTab() {
         </p>
         <p>
           Giờ nghỉ <b>không trừ vào giờ công</b> mà kéo dài thời gian có mặt. Quy tắc của tiệm:{" "}
-          <b>làm quá 4 tiếng là phải nghỉ</b> (chặt hơn luật Đức, luật chỉ bắt buộc từ 6 tiếng). Ví
-          dụ ca 9 giờ công chiếm 9 tiếng 45 phút vì có thêm 45 phút nghỉ.
+          <b>trên 6 tiếng nghỉ 30 phút</b>, <b>từ 8 tiếng nghỉ 60 phút</b>. Ví dụ ca 9 giờ
+          công chiếm <b>10 tiếng</b> có mặt, ca 8 giờ công chiếm 9 tiếng.
+          <br />
+          <span className="text-slate-500">
+            Mức này <b>rộng rãi hơn luật</b>: luật Đức (§ 4 ArbZG, áp dụng cả nước chứ
+            không khác nhau theo bang) chỉ buộc nghỉ 30 phút khi làm trên 6 tiếng và 45
+            phút khi trên 9 tiếng. Cho nghỉ nhiều hơn thì được, ít hơn thì không.
+          </span>
         </p>
         <div className="overflow-x-auto">
           <table className="text-sm border-collapse">

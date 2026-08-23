@@ -40,11 +40,16 @@ export type ResolvedDay = { closed: boolean; window: DayWindow };
 const w = (start: number, end: number): DayWindow => ({ startMinutes: start, endMinutes: end });
 
 // Vorgabe des Chefs (VietHaus Restaurant): Arbeitszeit (Schichtplanung, nicht
-// zwingend die Öffnungszeit) täglich 11:30–22:00, also ein 10,5-h-Fenster.
-// DURCHGEHEND – der Laden macht mittags nicht zu („không có pause"), deshalb
-// genau EIN Fenster je Tag statt zwei Blöcken. Die gesetzliche Ruhepause der
-// einzelnen Schicht ist davon unberührt und wird weiter nach ArbZG über
-// calculatePause() gerechnet (>4 h: 30 min, ab 9 h: 45 min).
+// zwingend die Öffnungszeit) täglich 11:30–22:00, also ein 10,5-h-Fenster,
+// DURCHGEHEND. Der Laden macht mittags nicht zu, deshalb genau EIN Fenster je
+// Tag statt zwei Blöcken.
+//
+// ACHTUNG, hier steckte ein Missverständnis: die Angabe „không có pause" des
+// Betriebs meint, dass der LADEN mittags nicht schließt – nicht, dass die
+// Mitarbeiter keine Pause bekommen. Beides wurde anfangs verwechselt, und
+// calculatePause gab deshalb 0 zurück. Die Ruhepause der einzelnen Schicht ist
+// von dieser Zeile unberührt und steht in time.ts (über 6 h: 30 min, ab 8 h:
+// 60 min).
 const ALL_DAYS = w(11 * 60 + 30, 22 * 60); // 11:30–22:00
 
 export const DEFAULT_WORK_HOURS: WorkHoursConfig = {
