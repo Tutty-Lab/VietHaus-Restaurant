@@ -3,8 +3,7 @@
 // ============================================================================
 
 import {
-  MAX_MINIJOB_EMPLOYEES,
-  MAX_STAMM_EMPLOYEES,
+  MAX_EMPLOYEES,
   MINIJOB_MAX_MONTHLY_HOURS,
   type Employee,
   type Shift,
@@ -45,17 +44,13 @@ export function validateSchedule(
   // ── Vorgaben des Betriebs zur Belegschaft ─────────────────────────────────
   // Diese Regeln haengen nicht am Plan, sondern an der Mitarbeiterliste. Sie
   // stehen trotzdem hier, damit ein Verstoss nicht erst beim Lohnbuero auffaellt.
-  const stammCount = employees.filter((e) => e.employmentType !== "MINIJOB").length;
-  const minijobCount = employees.length - stammCount;
-
-  if (stammCount > MAX_STAMM_EMPLOYEES) {
+  // Obergrenze für die GESAMTE Belegschaft. Früher wurde getrennt gezählt
+  // (höchstens 3 Stammkräfte, höchstens 2 Minijobs); der Betrieb zählt aber
+  // nur die Köpfe – wie sie sich auf die Anstellungsarten verteilen, ist
+  // seine Sache.
+  if (employees.length > MAX_EMPLOYEES) {
     errors.push({
-      message: `Quá số thợ chính: ${stammCount} người, tối đa ${MAX_STAMM_EMPLOYEES}.`,
-    });
-  }
-  if (minijobCount > MAX_MINIJOB_EMPLOYEES) {
-    errors.push({
-      message: `Quá số Minijob: ${minijobCount} người, tối đa ${MAX_MINIJOB_EMPLOYEES}.`,
+      message: `Quá số nhân viên: ${employees.length} người, tối đa ${MAX_EMPLOYEES}.`,
     });
   }
   for (const emp of employees) {

@@ -82,6 +82,10 @@ werden direkt aus den Konstanten gerendert und können daher nicht veralten.
   8-h-Schicht 9 h – beides passt in das Fenster 11:30–22:00 (10,5 h). EIN
   Dienst kann damit aber nicht mehr gleichzeitig auf- und zusperren; dafür
   braucht es zwei.
+- **Höchstens 5 Beschäftigte** (Angabe des Betriebs), gezählt wird die GESAMTE
+  Belegschaft. Früher standen dort zwei getrennte Zahlen (3 Stammkräfte, 2
+  Minijobs); wie sich die Leute auf die Anstellungsarten verteilen, ist Sache
+  des Betriebs. Verstoß = Warnung, kein Riegel.
 - **Der Laden ist nie offen und unbesetzt.** Geprüft wird jede Minute der
   Öffnungszeit, nicht nur Auf- und Zusperren (`uncoveredMinutes`,
   `dayDefect`). Vorher genügten zwei Dienste an den beiden Enden – mit der

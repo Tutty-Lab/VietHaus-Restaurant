@@ -90,6 +90,11 @@ export function DocsTab() {
           <li>Mỗi người <b>một ca mỗi ngày</b>.</li>
           <li>Không làm quá <b>6 ngày liên tiếp</b>.</li>
           <li>
+            <b>Tối đa 5 nhân viên</b> — tính <b>tổng số người</b>, không phân biệt thợ
+            chính hay Minijob. Chia thế nào là quyền của quán. Vượt thì app vẫn xếp
+            lịch, chỉ hiện cảnh báo.
+          </li>
+          <li>
             <b>Quán mở là phải có người</b> — không phút nào trong giờ mở cửa mà quán
             trống. Trước đây app chỉ kiểm tra có người mở cửa và có người đóng cửa.
           </li>

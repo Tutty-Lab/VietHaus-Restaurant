@@ -13,14 +13,17 @@ import type { DateOverride, WorkHoursConfig } from "./lib/workHours";
 export type EmploymentType = "VOLLZEIT" | "TEILZEIT" | "MINIJOB";
 
 /**
- * Vorgaben des Betriebs zur Belegschaft (VietHaus Restaurant):
- * höchstens drei Stammkräfte (Vollzeit oder Teilzeit) und zwei Minijobs –
- * das ist die heutige Besetzung: 3 Vollzeit + 2 Minijob.
- * Wird das nicht eingehalten, plant die App trotzdem – die Mitarbeiterliste
- * weist aber darauf hin.
+ * Höchstzahl der Beschäftigten – gezählt wird die GESAMTE Belegschaft.
+ *
+ * Früher standen hier zwei getrennte Zahlen (höchstens 3 Stammkräfte und 2
+ * Minijobs, die heutige Besetzung). Der Betrieb zählt aber nur die Köpfe: wie
+ * sich die fünf Leute auf Vollzeit, Teilzeit und Minijob verteilen, ist seine
+ * Sache und keine Regel der App.
+ *
+ * Angabe des Betriebs, keine Rechtsvorschrift – deshalb eine Warnung und kein
+ * harter Riegel.
  */
-export const MAX_STAMM_EMPLOYEES = 3;
-export const MAX_MINIJOB_EMPLOYEES = 2;
+export const MAX_EMPLOYEES = 5;
 
 /**
  * Minijob bei VietHaus: 43 Stunden im Monat laut Vertrag.
