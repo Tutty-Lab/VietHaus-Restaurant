@@ -20,6 +20,14 @@ import {
 } from "../lib/workHours";
 import { COMPANY_ADDRESS, COMPANY_NAME } from "../lib/company";
 
+/**
+ * Steht in diesem Stand überhaupt etwas? Maßstab sind Mitarbeiter und
+ * Schichten – Firmenname und Monat allein sind noch kein Inhalt.
+ */
+function hatInhalt(state: PersistedState): boolean {
+  return state.schedule.employees.length > 0 || state.schedule.shifts.length > 0;
+}
+
 function emptySchedule(): Schedule {
   const now = new Date();
   return {
@@ -107,15 +115,22 @@ export function useSchedule() {
           setSchedule(normalizeSchedule(remote.schedule));
           setOriginalShifts(remote.originalShifts ?? []);
           setPasswordHash(remote.passwordHash);
-        } else {
-          // Noch keine Zeile für diese Filiale: lokalen Stand hochladen.
+        } else if (hatInhalt(latest.current)) {
+          // Noch keine Zeile für diese Filiale: lokalen Stand hochladen –
+          // aber nur, wenn lokal überhaupt etwas drinsteht. Eine leere Zeile
+          // anzulegen bringt nichts und macht aus "noch nichts eingetragen"
+          // versehentlich einen gespeicherten Leerstand.
           await saveRemote(latest.current);
         }
         if (!cancelled) setRemoteStatus("idle");
-      } catch {
-        if (!cancelled) setRemoteStatus("error");
-      } finally {
+        // NUR nach erfolgreichem Lesen darf hochgeladen werden.
         if (!cancelled) hydrated.current = true;
+      } catch {
+        // Lesen fehlgeschlagen: hydrated bleibt false, es wird NICHTS
+        // hochgeladen. Sonst überschreibt der leere lokale Stand die Daten in
+        // der Datenbank – genau so ist eine Filiale schon einmal leer geräumt
+        // worden: Netzfehler beim Start, danach ein Klick, und weg war alles.
+        if (!cancelled) setRemoteStatus("error");
       }
     })();
     return () => {
