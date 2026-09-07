@@ -41,12 +41,20 @@ export function SchedulePrintPage({
   dates,
   title,
   layout = "byDate",
+  employeeIds,
 }: {
   schedule: Schedule;
   dates: string[];
   title: string;
   layout?: SchedulePrintLayout;
+  /** Nur diese Mitarbeiter zeigen; leer/fehlend => alle (ganzer Laden). */
+  employeeIds?: string[];
 }) {
+  // "Tất cả" => alle; sonst genau die gewählte Person (Reihenfolge wie im Plan).
+  const emps =
+    employeeIds && employeeIds.length
+      ? schedule.employees.filter((e) => employeeIds.includes(e.id))
+      : schedule.employees;
   const byKey = new Map<string, Shift>();
   for (const s of schedule.shifts) byKey.set(`${s.employeeId}#${s.date}`, s);
 
@@ -87,7 +95,7 @@ export function SchedulePrintPage({
             </tr>
           </thead>
           <tbody>
-            {schedule.employees.map((e) => {
+            {emps.map((e) => {
               const own = dates.map((d) => byKey.get(`${e.id}#${d}`));
               const total = own.reduce((sum, s) => sum + (s?.paidMinutes ?? 0), 0);
               return (
@@ -107,7 +115,7 @@ export function SchedulePrintPage({
             <tr className="bg-slate-100">
               <td className={`${td} text-left font-semibold`}>Besetzung</td>
               {dates.map((d) => {
-                const n = schedule.employees.filter((e) => byKey.has(`${e.id}#${d}`)).length;
+                const n = emps.filter((e) => byKey.has(`${e.id}#${d}`)).length;
                 return (
                   <td key={d} className={`${td} text-center`}>
                     {closedOn(d) ? "—" : n}
@@ -125,7 +133,7 @@ export function SchedulePrintPage({
             <tr className="bg-slate-100">
               <th className={`${th} text-left`}>Datum</th>
               <th className={`${th} text-left`}>Wochentag</th>
-              {schedule.employees.map((e) => (
+              {emps.map((e) => (
                 <th key={e.id} className={`${th} text-center`}>
                   {e.name}
                 </th>
@@ -143,7 +151,7 @@ export function SchedulePrintPage({
                     {WEEKDAY_LABELS_DE[weekdayKeyOf(parseIsoDate(d))]}
                     {holiday && <span className="text-slate-500"> · {holiday}</span>}
                   </td>
-                  {schedule.employees.map((e) => (
+                  {emps.map((e) => (
                     <td key={e.id} className={`${td} text-center`}>
                       <ShiftCell shift={byKey.get(`${e.id}#${d}`)} closed={closed} />
                     </td>
