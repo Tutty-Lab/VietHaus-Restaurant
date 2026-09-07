@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Employee, EmploymentType, Schedule, Shift } from "../types";
+import type { Employee, Schedule, Shift } from "../types";
 import { generateSchedule } from "../lib/scheduler";
 import { analyzeSchedule } from "../lib/analyze";
 import { validateSchedule, type ValidationResult } from "../lib/validation";
@@ -275,21 +275,16 @@ export function useSchedule() {
   }, [pushNow]);
 
   // ----- Mitarbeiter -----
-  const addEmployee = useCallback(
-    (name: string, employmentType: EmploymentType, targetHours: number) => {
-      const emp: Employee = {
-        id: newEmployeeId(),
-        name: name.trim() || "Neuer Mitarbeiter",
-        employmentType,
-        targetMinutes: Math.round(targetHours) * 60,
-      };
-      setSchedule((s) => {
-        if (s.lockedAt) return s; // Monat gedruckt und gesperrt
-        return { ...s, employees: [...s.employees, emp] };
-      });
-    },
-    [],
-  );
+  const addEmployee = useCallback((data: Omit<Employee, "id">): string | null => {
+    const id = newEmployeeId();
+    let ok = false;
+    setSchedule((s) => {
+      if (s.lockedAt) return s; // Monat gedruckt und gesperrt
+      ok = true;
+      return { ...s, employees: [...s.employees, { id, ...data }] };
+    });
+    return ok ? id : null;
+  }, []);
 
   const updateEmployee = useCallback((id: string, patch: Partial<Employee>) => {
     setSchedule((s) => {

@@ -27,6 +27,8 @@ import {
 } from "./demand";
 import { getShiftTemplate, type TemplateType } from "./shifts";
 import { consecutiveRunLengthWith, seededRandom } from "./consecutive";
+import { mayWorkOn } from "./availability";
+import { weekStartOf } from "./weeks";
 import { presenceFromPaid } from "./time";
 import {
   effectiveWeekdayKey,
@@ -621,6 +623,24 @@ function applyShift(state: SchedulerState, shift: Shift): void {
  * Platziert genau eine Schicht für einen Mitarbeiter: bestes Datum wählen,
  * Schichtlänge an das Tagesfenster anpassen. Gibt true zurück, wenn platziert.
  */
+/** Hat die Person diese Woche noch einen freien Arbeitstag (maxDaysPerWeek)? */
+function weekDayRoomLeft(
+  state: SchedulerState,
+  employee: Employee,
+  isoDate: string,
+  statt?: string,
+): boolean {
+  const grenze = employee.maxDaysPerWeek;
+  if (!grenze) return true;
+  const woche = weekStartOf(isoDate);
+  let n = 0;
+  for (const d of state.worked.get(employee.id) ?? []) {
+    if (d === statt) continue;
+    if (weekStartOf(d) === woche) n++;
+  }
+  return n < grenze;
+}
+
 function placeOneShift(state: SchedulerState, employee: Employee): boolean {
   const remaining = state.remaining.get(employee.id)!;
   if (remaining <= 0) return false;
@@ -643,12 +663,22 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
   // die es keinen zulässigen Tag mehr gab. Der Plan scheiterte dann komplett.
   let usableDays = 0;
   const trial = new Set(worked);
+  const wochenTage = new Map<string, number>();
+  if (employee.maxDaysPerWeek) {
+    for (const d of worked) wochenTage.set(weekStartOf(d), (wochenTage.get(weekStartOf(d)) ?? 0) + 1);
+  }
   for (const isoDate of state.dates) {
     if (trial.has(isoDate)) continue;
     const day = state.dayOf(isoDate);
     if (day.closed) continue;
+    if (!mayWorkOn(employee, isoDate)) continue; // fester freier Wochentag
     if (maxShiftHoursForWindow(windowLength(day)) === 0) continue;
     if (consecutiveRunLengthWith(trial, isoDate) > 6) continue;
+    if (employee.maxDaysPerWeek) {
+      const wk = weekStartOf(isoDate);
+      if ((wochenTage.get(wk) ?? 0) >= employee.maxDaysPerWeek) continue;
+      wochenTage.set(wk, (wochenTage.get(wk) ?? 0) + 1);
+    }
     trial.add(isoDate); // belegt – zählt für die Kette der folgenden Tage mit
     usableDays += 1;
   }
@@ -664,6 +694,8 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     if (worked.has(isoDate)) continue; // max. ein Dienst pro Tag
     const day = state.dayOf(isoDate);
     if (day.closed) continue; // Betriebsruhe -> kein Dienst
+    if (!mayWorkOn(employee, isoDate)) continue; // fester freier Wochentag
+    if (!weekDayRoomLeft(state, employee, isoDate)) continue; // Wochentage aufgebraucht
 
     const dsNow = state.dateState.get(isoDate)!;
     const wanted = coverSize(state, isoDate); // wie viele Leute der Tag braucht
@@ -835,6 +867,8 @@ function repairDemand(state: SchedulerState, employeesById: Map<string, Employee
         if (to === from || worked.has(to)) continue;
         const day = state.dayOf(to);
         if (day.closed || windowLength(day) < presence) continue; // geschlossen / passt nicht
+        if (!mayWorkOn(employee, to)) continue; // fester freier Wochentag
+        if (!weekDayRoomLeft(state, employee, to, from)) continue; // Wochentage aufgebraucht
         // 6-Tage-Regel prüfen, als ob "from" bereits entfernt wäre.
         const trial = new Set(worked);
         trial.delete(from);
@@ -911,7 +945,13 @@ function repairDemand(state: SchedulerState, employeesById: Map<string, Employee
  * langer Dienst fehlt, findet unter fremden Diensten oft keinen Spender, wohl
  * aber unter den eigenen Tagen desselben Mitarbeiters.
  */
-function canSwap(state: SchedulerState, a: Shift, b: Shift, allowSameEmployee = false): boolean {
+function canSwap(
+  state: SchedulerState,
+  a: Shift,
+  b: Shift,
+  employeesById: Map<string, Employee>,
+  allowSameEmployee = false,
+): boolean {
   if (a.date === b.date) return false;
 
   const sameEmployee = a.employeeId === b.employeeId;
@@ -922,6 +962,13 @@ function canSwap(state: SchedulerState, a: Shift, b: Shift, allowSameEmployee = 
     const workedB = state.worked.get(b.employeeId)!;
     // Höchstens ein Dienst pro Mitarbeiter und Tag.
     if (workedA.has(b.date) || workedB.has(a.date)) return false;
+
+    // Fester freier Wochentag / Wochentage-Obergrenze am jeweiligen Zieltag.
+    const empA = employeesById.get(a.employeeId)!;
+    const empB = employeesById.get(b.employeeId)!;
+    if (!mayWorkOn(empA, b.date) || !mayWorkOn(empB, a.date)) return false;
+    if (!weekDayRoomLeft(state, empA, b.date, a.date)) return false;
+    if (!weekDayRoomLeft(state, empB, a.date, b.date)) return false;
 
     // 6-Tage-Regel für beide, jeweils ohne den eigenen alten Tag.
     const trialA = new Set(workedA);
@@ -1008,7 +1055,7 @@ function repairPeakCapacity(state: SchedulerState, employeesById: Map<string, Em
           }
 
           // Auch Tausche innerhalb derselben Person sind hier erlaubt.
-          if (!canSwap(state, short, long, true)) continue;
+          if (!canSwap(state, short, long, employeesById, true)) continue;
 
           performSwap(state, short, long, employeesById);
           improved = true;
@@ -1043,6 +1090,11 @@ function trySwaps(state: SchedulerState, employeesById: Map<string, Employee>): 
       const workedB = state.worked.get(empB.id)!;
       // Harte Regel: höchstens ein Dienst pro Mitarbeiter und Tag.
       if (workedA.has(b.date) || workedB.has(a.date)) continue;
+
+      // Fester freier Wochentag / Wochentage-Obergrenze am jeweiligen Zieltag.
+      if (!mayWorkOn(empA, b.date) || !mayWorkOn(empB, a.date)) continue;
+      if (!weekDayRoomLeft(state, empA, b.date, a.date)) continue;
+      if (!weekDayRoomLeft(state, empB, a.date, b.date)) continue;
 
       // Die getauschten Längen müssen in das jeweilige Fenster passen.
       const dayA = state.dayOf(a.date);
