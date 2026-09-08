@@ -23,17 +23,23 @@ function monthLabelDe(year: number, month: number): string {
 export function StundenzettelPage({
   schedule,
   employee,
+  dates,
+  periodLabel,
 }: {
   schedule: Schedule;
   employee: Employee;
+  /** Nur diese Tage zeigen (Wochen-Stundenzettel); fehlend => ganzer Monat. */
+  dates?: string[];
+  /** Zeitraum-Text oben rechts; fehlend => Monat/Jahr. */
+  periodLabel?: string;
 }) {
-  const dates = datesOfMonth(schedule.year, schedule.month);
+  const rows = dates ?? datesOfMonth(schedule.year, schedule.month);
   const byDate = new Map<string, Shift>();
   for (const s of schedule.shifts) {
     if (s.employeeId === employee.id) byDate.set(s.date, s);
   }
 
-  const totalMinutes = [...byDate.values()].reduce((a, s) => a + s.paidMinutes, 0);
+  const totalMinutes = rows.reduce((a, d) => a + (byDate.get(d)?.paidMinutes ?? 0), 0);
   const holidayNames = publicHolidayNames(schedule.year);
   const closedByDate = new Map(
     schedule.dateOverrides.filter((o) => o.closed).map((o) => [o.date, o] as const),
@@ -48,7 +54,7 @@ export function StundenzettelPage({
           {schedule.address && <p className="text-slate-500 text-[11px]">{schedule.address}</p>}
         </div>
         <div className="text-right text-slate-600">
-          <div>{monthLabelDe(schedule.year, schedule.month)}</div>
+          <div>{periodLabel ?? monthLabelDe(schedule.year, schedule.month)}</div>
         </div>
       </div>
 
@@ -79,7 +85,7 @@ export function StundenzettelPage({
           </tr>
         </thead>
         <tbody>
-          {dates.map((d) => {
+          {rows.map((d) => {
             const s = byDate.get(d);
             const wd = WEEKDAY_LABELS_DE[weekdayKeyOf(parseIsoDate(d))];
             const holiday = holidayNames.get(d);
