@@ -1,5 +1,5 @@
 // ============================================================================
-// Beispieldaten: die heutige Besetzung von VietHaus, Summe = 606 bezahlte Stunden.
+// Beispieldaten von VietHaus (Dippoldiswalde). Monatsstunden, nicht je Woche.
 // ============================================================================
 
 import type { Employee, Schedule } from "../types";
@@ -11,20 +11,36 @@ export function makeEmployee(
   employmentType: Employee["employmentType"],
   targetHours: number,
 ): Employee {
-  return { id, name, employmentType, targetMinutes: targetHours * 60 };
+  return { id, name, employmentType, targetMinutes: Math.round(targetHours * 60) };
+}
+
+/** Mitarbeiter mit WOCHENvertrag (hier nicht im Einsatz, bleibt für die Oberfläche). */
+export function makeWeekly(
+  id: string,
+  name: string,
+  employmentType: Employee["employmentType"],
+  weeklyHours: number,
+): Employee {
+  return { id, name, employmentType, targetMinutes: 0, weeklyHours };
 }
 
 /**
- * Beispielbelegschaft = Angaben des Chefs (VietHaus Restaurant):
- * 3 Vollzeit (1x 200 h, 2x 160 h) + 2 Minijob (je 43 h). Summe = 606 h.
+ * Kunden-Demo („Demo Restaurant"): 10 erfundene Personen – 5 Vollzeit, 3 Teilzeit,
+ * 2 Minijob, 6 Bồi und 4 Bếp (1.196 h im Monat).
  */
-export const SAMPLE_EMPLOYEES: Employee[] = [
-  makeEmployee("ST1", "ST1", "VOLLZEIT", 200),
-  makeEmployee("ST2", "ST2", "VOLLZEIT", 160),
-  makeEmployee("ST3", "ST3", "VOLLZEIT", 160),
-  makeEmployee("MJ1", "MJ1", "MINIJOB", 43),
-  makeEmployee("MJ2", "MJ2", "MINIJOB", 43),
-];
+/** Startbelegschaft wie in der alten App: 3 Vollzeit, 2 Minijob. */
+export function vietHausEmployees(): Employee[] {
+  return [
+    makeEmployee("ST1", "ST1", "VOLLZEIT", 200),
+    makeEmployee("ST2", "ST2", "VOLLZEIT", 160),
+    makeEmployee("ST3", "ST3", "VOLLZEIT", 160),
+    makeEmployee("MJ1", "MJ1", "MINIJOB", 43),
+    makeEmployee("MJ2", "MJ2", "MINIJOB", 43),
+  ];
+}
+
+/** Belegschaft der Standard-Filiale – für Tests und Altaufrufe. */
+export const SAMPLE_EMPLOYEES: Employee[] = vietHausEmployees();
 
 export function createSampleSchedule(): Schedule {
   return {
@@ -34,7 +50,7 @@ export function createSampleSchedule(): Schedule {
     month: 8, // August
     workHours: structuredClone(DEFAULT_WORK_HOURS),
     dateOverrides: [],
-    employees: SAMPLE_EMPLOYEES.map((e) => ({ ...e })),
+    employees: vietHausEmployees(),
     shifts: [],
   };
 }

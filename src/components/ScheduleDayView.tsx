@@ -14,6 +14,7 @@ import { publicHolidayNames, publicHolidays } from "../lib/holidays";
 import { isDayClosed } from "../lib/workHours";
 import { format } from "date-fns";
 import { employmentLabelVi } from "../lib/employment";
+import { PauseLabel } from "./PauseLabel";
 
 /** Chế độ xem theo từng ngày – tối ưu cho điện thoại (không cuộn ngang). */
 export function ScheduleDayView({
@@ -156,46 +157,36 @@ export function ScheduleDayView({
           </div>
         ) : (
           working.map((emp) => {
-            // Alle Dienste der Person an diesem Tag – mittags UND abends.
             const own = shiftsByEmp.get(emp.id) as Shift[];
-            const s = own[0];
-            const isEarly = s.shiftType === "EARLY";
+            const first = own[0];
+            const paid = own.reduce((sum, shift) => sum + shift.paidMinutes, 0);
             return (
               <button
                 key={emp.id}
                 onClick={() => onEdit(emp.id, selected)}
                 className={`w-full flex items-center gap-3 rounded-lg border p-3 text-left ${
-                  isEarly ? "shift-early" : "shift-late"
-                } ${!s.generated ? "shift-custom" : ""}`}
+                  first.shiftType === "EARLY" ? "shift-early" : "shift-late"
+                } ${own.some((shift) => !shift.generated) ? "shift-custom" : ""}`}
               >
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">
-                    {emp.name}
-                    {own.length > 1 && (
-                      <span className="ml-1.5 rounded bg-slate-900/10 px-1 text-[10px] font-semibold">
-                        Ca gãy · {minutesToShortHours(own.reduce((sum, x) => sum + x.paidMinutes, 0))}
-                      </span>
-                    )}
-                  </div>
+                  <div className="font-medium truncate">{emp.name}</div>
                   <div className="text-xs opacity-80">
                     {employmentLabelVi(emp.employmentType)} ·{" "}
-                    {isEarly ? "Ca sáng" : "Ca tối"}
+                    {own.length > 1
+                      ? `Ca gãy · ${minutesToShortHours(paid)}`
+                      : first.shiftType === "EARLY"
+                        ? "Ca sáng"
+                        : "Ca tối"}
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <div className="font-semibold">
-                    {minutesToTime(s.startMinutes)}–{minutesToTime(s.endMinutes)}
-                  </div>
-                  <div className="text-xs opacity-80">
-                    {minutesToShortHours(s.paidMinutes)} · Nghỉ {s.pauseMinutes}
-                  </div>
-                  {own.slice(1).map((x) => (
-                    <div key={x.id} className="mt-1 border-t border-slate-300/70 pt-1">
+                <div className="text-right shrink-0 space-y-0.5">
+                  {own.map((shift) => (
+                    <div key={shift.id}>
                       <div className="font-semibold">
-                        {minutesToTime(x.startMinutes)}–{minutesToTime(x.endMinutes)}
+                        {minutesToTime(shift.startMinutes)}–{minutesToTime(shift.endMinutes)}
                       </div>
                       <div className="text-xs opacity-80">
-                        {minutesToShortHours(x.paidMinutes)} · Nghỉ {x.pauseMinutes}
+                        {minutesToShortHours(shift.paidMinutes)} · <PauseLabel shift={shift} />
                       </div>
                     </div>
                   ))}

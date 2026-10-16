@@ -25,25 +25,15 @@ export function minutesToTime(totalMinutes: number): string {
 }
 
 /**
- * Pausenregel. Angabe des Betriebs: über 6 Stunden 30 Minuten, ab 8 Stunden
- * 60 Minuten.
+ * Pausenregel:
+ * - Làm việc liên tục trên 6 tiếng (> 6h): nghỉ giải lao 30 phút.
+ * - Làm việc liên tục trên 8 tiếng (> 8h): nghỉ giải lao 60 phút.
+ * - Từ 6 tiếng trở xuống (<= 6h): không tính nghỉ giải lao (0 phút).
  *
- * Das ist GROSSZÜGIGER als das Gesetz. Das Arbeitszeitgesetz (§ 4 ArbZG, für
- * ganz Deutschland gleich, nicht je Bundesland verschieden) verlangt bei mehr
- * als 6 Stunden 30 Minuten und bei mehr als 9 Stunden 45 Minuten. Mehr Pause
- * zu geben ist erlaubt, weniger nicht – die Vorgabe liegt also auf der
- * sicheren Seite.
- *
- * Die Pause wird NICHT von der Arbeitszeit abgezogen, sondern verlängert die
- * Anwesenheit: presence = paid + pause. Eine 9-Stunden-Schicht belegt damit
- * 10 Stunden und passt noch in das Fenster 11:30-22:00 (10,5 h). Eine
- * 8-Stunden-Schicht belegt 9 Stunden.
- *
- * Einzige Stelle für diese Rechnung – alle Schicht- und Zeitberechnungen
- * leiten sich hier ab.
+ * Tiêu chuẩn này cao hơn hoặc bằng luật lao động Đức (§ 4 ArbZG: > 6h là 30 min, > 9h là 45 min).
  */
 export function calculatePause(paidMinutes: number): number {
-  if (paidMinutes >= 8 * 60) return 60;
+  if (paidMinutes > 8 * 60) return 60;
   if (paidMinutes > 6 * 60) return 30;
   return 0;
 }
@@ -79,6 +69,6 @@ export function minutesToShortHours(totalMinutes: number): string {
   const hours = totalMinutes / 60;
   const text = Number.isInteger(hours)
     ? String(hours)
-    : hours.toLocaleString("de-DE", { maximumFractionDigits: 2 });
+    : hours.toLocaleString("de-DE", { maximumFractionDigits: 1 });
   return `${text}h`;
 }
