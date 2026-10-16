@@ -5,11 +5,7 @@
 
 import type { Schedule, Shift } from "../types";
 
-// Je Filiale ein eigener Schlüssel – sonst würde das Umschalten die Daten
-// der anderen Filiale überschreiben.
-const keyFor = (storeId: string) => `stundenzettel-app:v1:${storeId}`;
-/** Schlüssel der alten VietHaus-App (ein Laden, ohne Filial-Suffix). */
-const LEGACY_KEY = "stundenzettel-app:v1";
+const STORAGE_KEY = "stundenzettel-app:v1";
 
 export type PersistedState = {
   schedule: Schedule;
@@ -23,11 +19,9 @@ export type PersistedState = {
   originalShifts: Shift[];
 };
 
-export function loadState(storeId: string): PersistedState | null {
+export function loadState(): PersistedState | null {
   try {
-    // Geräte mit der alten App: deren Stand einmal übernehmen (gespeichert wird
-    // danach unter dem neuen Schlüssel).
-    const raw = localStorage.getItem(keyFor(storeId)) ?? localStorage.getItem(LEGACY_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedState;
     if (!parsed?.schedule) return null;
@@ -37,17 +31,17 @@ export function loadState(storeId: string): PersistedState | null {
   }
 }
 
-export function saveState(storeId: string, state: PersistedState): void {
+export function saveState(state: PersistedState): void {
   try {
-    localStorage.setItem(keyFor(storeId), JSON.stringify(state));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
     // Speicher voll / nicht verfügbar – im MVP still ignorieren.
   }
 }
 
-export function clearState(storeId: string): void {
+export function clearState(): void {
   try {
-    localStorage.removeItem(keyFor(storeId));
+    localStorage.removeItem(STORAGE_KEY);
   } catch {
     // ignorieren
   }

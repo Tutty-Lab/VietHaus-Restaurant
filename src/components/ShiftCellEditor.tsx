@@ -3,7 +3,7 @@ import type { UseScheduleReturn } from "../hooks/useSchedule";
 import { calculatePause, minutesToShortHours, minutesToTime, timeToMinutes } from "../lib/time";
 import { isoLabel } from "../lib/shiftOps";
 import { WEEKDAY_LABELS_VI, weekdayKeyOf, parseIsoDate } from "../lib/demand";
-import { frameOf, resolveDay } from "../lib/workHours";
+import { resolveDay } from "../lib/workHours";
 import { publicHolidays } from "../lib/holidays";
 
 const inputClass =
@@ -29,27 +29,17 @@ export function ShiftCellEditor({
   // (inkl. Ausnahmen / Feiertag).
   const overrideMap = Object.fromEntries(schedule.dateOverrides.map((o) => [o.date, o]));
   const resolved = resolveDay(schedule.workHours, date, publicHolidays(schedule.year), overrideMap);
-  // Bei geschlossenem Tag als Vorschlag den Feiertagsrahmen nehmen.
-  const win = resolved.closed ? frameOf(schedule.workHours.holiday) : resolved.window;
+  const win = resolved.closed
+    ? { startMinutes: schedule.workHours.holiday.startMinutes, endMinutes: schedule.workHours.holiday.endMinutes }
+    : resolved.window;
   const [start, setStart] = useState(minutesToTime(shift?.startMinutes ?? win.startMinutes));
   const [end, setEnd] = useState(minutesToTime(shift?.endMinutes ?? win.endMinutes));
-    const [pause, setPause] = useState(String(shift?.pauseMinutes ?? 30));
-  const [pauseStart, setPauseStart] = useState(shift?.pauseStartMinutes == null ? "" : minutesToTime(shift.pauseStartMinutes));
+  const [pause, setPause] = useState(String(shift?.pauseMinutes ?? 30));
 
   let paidPreview = 0;
   let parseError = "";
   try {
     paidPreview = timeToMinutes(end) - timeToMinutes(start) - Number(pause);
-    if (Number(pause) > 0 && !pauseStart) {
-      parseError = "Cần nhập giờ bắt đầu nghỉ để kiểm tra đủ người.";
-    }
-    if (Number(pause) > 0 && pauseStart) {
-      const from = timeToMinutes(pauseStart);
-      const to = from + Number(pause);
-      if (from <= timeToMinutes(start) || to >= timeToMinutes(end) || from - timeToMinutes(start) > 360 || timeToMinutes(end) - to > 360) {
-        parseError = "Giờ nghỉ phải nằm trong ca; không làm liên tục quá 6 giờ.";
-      }
-    }
   } catch (e) {
     parseError = e instanceof Error ? e.message : "Giờ không hợp lệ";
   }
@@ -67,11 +57,10 @@ export function ShiftCellEditor({
     const s = timeToMinutes(start);
     const en = timeToMinutes(end);
     const p = Number(pause);
-    const ps = p > 0 && pauseStart ? timeToMinutes(pauseStart) : undefined;
     if (shift) {
-      editShiftTimes(shift.id, { startMinutes: s, endMinutes: en, pauseMinutes: p, pauseStartMinutes: ps });
+      editShiftTimes(shift.id, { startMinutes: s, endMinutes: en, pauseMinutes: p });
     } else {
-      addShift(employeeId, date, s, en, p, ps);
+      addShift(employeeId, date, s, en, p);
     }
     onClose();
   }
@@ -119,11 +108,6 @@ export function ShiftCellEditor({
               />
             </label>
           </div>
-
-          {Number(pause) > 0 && <label className="flex flex-col">
-            <span className="text-xs text-slate-600 mb-1">Bắt đầu nghỉ</span>
-            <input type="time" className={inputClass} value={pauseStart} onChange={(e) => setPauseStart(e.target.value)} />
-          </label>}
 
           {parseError ? (
             <div className="text-sm text-rose-600">{parseError}</div>

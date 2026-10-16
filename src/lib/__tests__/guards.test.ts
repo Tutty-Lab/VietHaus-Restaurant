@@ -1,52 +1,74 @@
 // ============================================================================
-// Unterbesetzung muss sichtbar werden statt still zu passieren.
-//
-// VietHaus: jeden Tag 11:30–22:00; abends (18:00–21:00) mindestens 2 Leute,
-// bis 22:00 bleibt immer mindestens eine Person.
+// Zwei Fälle, die der Chef durch eigene Eingaben auslösen kann:
+//  - ein Soll, das kleiner ist als die kürzeste Schicht,
+//  - eine Besetzung, die für die Stoßzeiten schlicht zu dünn ist.
+// Beides muss sichtbar werden statt still zu passieren.
 // ============================================================================
 
 import { describe, expect, it } from "vitest";
+import { generateSchedule } from "../scheduler";
 import { analyzeSchedule } from "../analyze";
 import { DEFAULT_WORK_HOURS } from "../workHours";
-import type { Employee, Shift } from "../../types";
+import type { Employee } from "../../types";
 
-const emp = (id: string): Employee => ({ id, name: id, employmentType: "TEILZEIT", targetMinutes: 60 * 60 });
-
-const dienst = (id: string, date: string, from: number, to: number): Shift => ({
-  id: `shift-${id}-${date}-${from}`,
-  employeeId: id,
-  date,
-  startMinutes: from,
-  endMinutes: to,
-  pauseMinutes: 0,
-  paidMinutes: to - from,
-  shiftType: from >= 17 * 60 ? "LATE" : "EARLY",
-  generated: true,
+const emp = (id: string, type: Employee["employmentType"], hours: number): Employee => ({
+  id,
+  name: id,
+  employmentType: type,
+  targetMinutes: hours * 60,
 });
 
-const peaksOf = (employees: Employee[], shifts: Shift[], date: string) =>
-  analyzeSchedule({ year: 2026, month: 8, workHours: DEFAULT_WORK_HOURS, employees, shifts })
-    .peakViolations.find((d) => d.date === date)?.peaks ?? [];
+const generate = (employees: Employee[]) =>
+  generateSchedule({ year: 2026, month: 8, workHours: DEFAULT_WORK_HOURS, employees });
 
-describe("VietHaus – Besetzung", () => {
-  it("abends zwei Leute bis 22:00 ist in Ordnung", () => {
-    const shifts = [
-      dienst("a", "2026-08-03", 11 * 60 + 30, 17 * 60),
-      dienst("b", "2026-08-03", 17 * 60, 22 * 60),
-      dienst("c", "2026-08-03", 17 * 60, 21 * 60),
-    ];
-    expect(peaksOf([emp("a"), emp("b"), emp("c")], shifts, "2026-08-03").filter((p) => !p.ok)).toEqual([]);
+describe("Soll kleiner als die kürzeste Schicht", () => {
+  it("nennt den wahren Grund statt der Kapazitätsdecke", () => {
+    // Früher kam hier ein Vortrag über die 6-Tage-Regel und eine Decke von
+    // über 200 h – für jemanden, der 2 h eingetragen hat, völlig nutzlos.
+    let message = "";
+    try {
+      generate([emp("a", "VOLLZEIT", 2)]);
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toContain("Định mức quá nhỏ");
+    expect(message).toContain("3h");
+    expect(message).not.toContain("6 ngày");
   });
 
-  it("abends nur eine Person wird gemeldet", () => {
-    const shifts = [dienst("a", "2026-08-03", 11 * 60 + 30, 17 * 60), dienst("b", "2026-08-03", 17 * 60, 22 * 60)];
-    const tot = peaksOf([emp("a"), emp("b")], shifts, "2026-08-03").find((p) => !p.ok && p.label === "Tối");
-    expect(tot?.minStaff).toBe(1);
-    expect(tot?.required).toBe(2);
+  it("3 h ist die Untergrenze und geht durch", () => {
+    const shifts = generate([emp("a", "TEILZEIT", 3)]);
+    expect(shifts).toHaveLength(1);
+    expect(shifts[0].paidMinutes).toBe(180);
+  });
+});
+
+describe("Stoßzeiten bei zu dünner Besetzung", () => {
+  const employees = [emp("a", "VOLLZEIT", 176), emp("b", "VOLLZEIT", 176)];
+  const shifts = generate(employees);
+
+  it("plant trotzdem einen rechnerisch korrekten Monat", () => {
+    for (const e of employees) {
+      const sum = shifts
+        .filter((s) => s.employeeId === e.id)
+        .reduce((acc, s) => acc + s.paidMinutes, 0);
+      expect(sum).toBe(e.targetMinutes);
+    }
   });
 
-  it("meldet, wenn bis 22:00 niemand mehr da ist", () => {
-    const shifts = [dienst("a", "2026-08-03", 11 * 60 + 30, 19 * 60), dienst("b", "2026-08-03", 17 * 60, 21 * 60)];
-    expect(peaksOf([emp("a"), emp("b")], shifts, "2026-08-03").some((p) => !p.ok && p.label === "Đóng cửa")).toBe(true);
+  it("meldet die unterbesetzten Tage, statt sie zu verschweigen", () => {
+    const analysis = analyzeSchedule({
+      year: 2026,
+      month: 8,
+      workHours: DEFAULT_WORK_HOURS,
+      employees,
+      shifts,
+    });
+    // Mit zwei Leuten sind zwei besetzte Spitzen an jedem Tag nicht möglich –
+    // entscheidend ist, dass die Auswertung das auch sagt.
+    expect(analysis.peakViolations.length).toBeGreaterThan(0);
+    for (const day of analysis.peakViolations) {
+      expect(day.peaks.some((p) => !p.ok)).toBe(true);
+    }
   });
 });

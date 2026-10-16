@@ -1,13 +1,11 @@
 // ============================================================================
 // Zentrales State-Management (ohne externe Bibliothek). Kapselt Schedule,
-// LocalStorage-Persistenz und alle Aktionen (Generieren, Bearbeiten, Reset) –
-// je Filiale getrennt: das Umschalten lädt den Stand der anderen Filiale.
+// LocalStorage-Persistenz und alle Aktionen (Generieren, Bearbeiten, Reset).
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Employee, Schedule, Shift } from "../types";
 import { generateSchedule } from "../lib/scheduler";
-import { isScheduleYearAllowed, SCHEDULE_YEAR_RANGE_LABEL } from "../lib/years";
 import { analyzeSchedule } from "../lib/analyze";
 import { validateSchedule, type ValidationResult } from "../lib/validation";
 import { clearState, loadState, saveState, type PersistedState } from "../lib/storage";
@@ -17,18 +15,10 @@ import { createManualShift, updateShiftTimes } from "../lib/shiftOps";
 import {
   DEFAULT_WORK_HOURS,
   normalizeWorkHours,
-  resolveDay,
   type DateOverride,
   type OverrideMap,
 } from "../lib/workHours";
-import { datesOfMonth } from "../lib/demand";
-import { publicHolidays } from "../lib/holidays";
-import { initialScheduleFor, storeById, withSharedPersonDefaults, type StoreConfig } from "../lib/stores";
-import { applyMigrations } from "../lib/migrations";
-import { archiveFromLegacySavedPlans, listSavedMonths, mergeArchives, switchMonth } from "../lib/monthArchive";
-import { isEmployedOn } from "../lib/availability";
-import { contractOpenDays } from "../lib/contract";
-import { weekStartOf } from "../lib/weeks";
+import { COMPANY_ADDRESS, COMPANY_NAME } from "../lib/company";
 
 /**
  * Steht in diesem Stand überhaupt etwas? Maßstab sind Mitarbeiter und
@@ -38,11 +28,11 @@ function hatInhalt(state: PersistedState): boolean {
   return state.schedule.employees.length > 0 || state.schedule.shifts.length > 0;
 }
 
-function emptySchedule(store: StoreConfig): Schedule {
+function emptySchedule(): Schedule {
   const now = new Date();
   return {
-    companyName: store.name,
-    address: store.address,
+    companyName: COMPANY_NAME,
+    address: COMPANY_ADDRESS,
     year: now.getFullYear(),
     month: now.getMonth() + 1,
     workHours: structuredClone(DEFAULT_WORK_HOURS),
@@ -60,41 +50,21 @@ function overridesToMap(list: DateOverride[]): OverrideMap {
 }
 
 /** Migriert einen (evtl. alten) gespeicherten Stand auf das aktuelle Schema. */
-function normalizeSchedule(raw: Schedule | undefined, store: StoreConfig): Schedule {
-  const base = emptySchedule(store);
+function normalizeSchedule(raw: Schedule | undefined): Schedule {
+  const base = emptySchedule();
   if (!raw) return base;
-  // Danach die einmaligen Datenänderungen (neue Mitarbeiter usw.) – sie gelten
-  // für den lokalen UND den aus Supabase geladenen Stand.
-  return applyMigrations(store.id, {
-    // Firmenname & Adresse kommen aus der Filiale (không cho sửa).
-    companyName: store.name,
-    address: store.address,
+  return {
+    // Firmenname & Adresse sind fest (không cho sửa) – immer erzwingen.
+    companyName: COMPANY_NAME,
+    address: COMPANY_ADDRESS,
     year: raw.year ?? base.year,
     month: raw.month ?? base.month,
     workHours: normalizeWorkHours(raw.workHours),
     dateOverrides: Array.isArray(raw.dateOverrides) ? raw.dateOverrides : [],
-    employees: withSharedPersonDefaults(raw.employees ?? [], store),
+    employees: raw.employees ?? [],
     shifts: raw.shifts ?? [],
     lockedAt: raw.lockedAt,
-    underQuotaAccepted: raw.underQuotaAccepted === true ? true : undefined,
-    // Archiv der anderen Monate; „Bản đã lưu" der Vorversion wird übernommen.
-    archive: archiveFromLegacySavedPlans({
-      ...raw,
-      archive: raw.archive && typeof raw.archive === "object" ? raw.archive : {},
-    }).archive,
     printedWeeks: Array.isArray(raw.printedWeeks) ? raw.printedWeeks : [],
-    migrations: Array.isArray(raw.migrations) ? raw.migrations : [],
-  });
-}
-
-/** Lokaler Stand einer Filiale; beim allerersten Öffnen die Startbelegschaft. */
-function localStateOf(storeId: string): PersistedState {
-  const store = storeById(storeId);
-  const persisted = loadState(storeId);
-  return {
-    schedule: normalizeSchedule(persisted?.schedule ?? initialScheduleFor(store), store),
-    originalShifts: persisted?.originalShifts ?? [],
-    passwordHash: persisted?.passwordHash,
   };
 }
 
@@ -102,42 +72,27 @@ function newEmployeeId(): string {
   return `emp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 }
 
-/**
- * Eine Filiale. Die App zeigt beide gleichzeitig und ruft den Hook deshalb
- * zweimal auf – jede Filiale mit eigenem Zustand, eigener Persistenz und
- * eigener Sync.
- */
-export function useSchedule(storeId: string) {
-  const storeConfig = storeById(storeId);
-  const [initial] = useState(() => localStateOf(storeId));
-  const [schedule, setSchedule] = useState<Schedule>(initial.schedule);
-  const [passwordHash, setPasswordHash] = useState<string | undefined>(initial.passwordHash);
-  const [originalShifts, setOriginalShifts] = useState<Shift[]>(initial.originalShifts);
+export function useSchedule() {
+  const [schedule, setSchedule] = useState<Schedule>(() => {
+    const persisted = loadState();
+    return normalizeSchedule(persisted?.schedule);
+  });
+  const [passwordHash, setPasswordHash] = useState<string | undefined>(
+    () => loadState()?.passwordHash,
+  );
+  const [originalShifts, setOriginalShifts] = useState<Shift[]>(() => {
+    const persisted = loadState();
+    return persisted?.originalShifts ?? [];
+  });
   const [genError, setGenError] = useState<string | null>(null);
-  // Zählt jede ERFOLGREICHE Generierung hoch – die Oberfläche zeigt daraufhin
-  // eine kurze Erfolgsmeldung („Đã tạo lịch").
-  const [genStamp, setGenStamp] = useState(0);
-  // Jeder Klick auf "Tạo lịch" soll einen ANDEREN gültigen Plan liefern.
-  const genNonce = useRef(0);
   const [remoteStatus, setRemoteStatus] = useState<RemoteStatus>(
     isRemoteConfigured ? "idle" : "off",
   );
 
-  // Immer sofort lokal sichern – das ist der Offline-Puffer. storeId wechselt im
-  // SELBEN Update wie der Stand (setStoreId), daher passt beides zusammen.
-  // Vorher gespeicherte Monate aus dem LocalStorage übernehmen (anderer Tab),
-  // damit ein veralteter Tab nie einen gespeicherten Monat löscht.
+  // Immer sofort lokal sichern – das ist der Offline-Puffer.
   useEffect(() => {
-    const merged = mergeArchives(schedule, loadState(storeId)?.schedule);
-    if (merged !== schedule) {
-      setSchedule(merged); // speichert im nächsten Durchlauf
-      return;
-    }
-    saveState(storeId, { schedule, originalShifts, passwordHash });
-  }, [storeId, schedule, originalShifts, passwordHash]);
-
-  // Nach „Xoá dữ liệu" darf das Zusammenführen die alten Monate nicht zurückholen.
-  const skipArchiveMerge = useRef(false);
+    saveState({ schedule, originalShifts, passwordHash });
+  }, [schedule, originalShifts, passwordHash]);
 
   // Letzter Stand für Zugriffe außerhalb des Renders (siehe Erst-Upload).
   const latest = useRef<PersistedState>({ schedule, originalShifts, passwordHash });
@@ -145,99 +100,70 @@ export function useSchedule(storeId: string) {
     latest.current = { schedule, originalShifts, passwordHash };
   }, [schedule, originalShifts, passwordHash]);
 
-  // Beim Start und nach jedem Filialwechsel den Stand dieser Filiale aus der
-  // gemeinsamen Datenbank holen. Vorher darf nicht hochgeladen werden, sonst
-  // überschreibt der lokale (evtl. leere) Stand die Daten in der Datenbank.
+  // Beim Start den Stand der Filiale aus der gemeinsamen Datenbank holen.
+  // Vorher darf nicht hochgeladen werden, sonst überschreibt der lokale
+  // (evtl. leere) Stand die Daten in der Datenbank.
   const hydrated = useRef(!isRemoteConfigured);
   useEffect(() => {
     if (!isRemoteConfigured) return;
-    hydrated.current = false;
     let cancelled = false;
     (async () => {
       try {
-        const remote = await loadRemote(storeId);
+        const remote = await loadRemote();
         if (cancelled) return;
         if (remote?.schedule) {
-          setSchedule(normalizeSchedule(remote.schedule, storeById(storeId)));
+          setSchedule(normalizeSchedule(remote.schedule));
           setOriginalShifts(remote.originalShifts ?? []);
           setPasswordHash(remote.passwordHash);
         } else if (hatInhalt(latest.current)) {
           // Noch keine Zeile für diese Filiale: lokalen Stand hochladen –
-          // aber nur, wenn lokal überhaupt etwas drinsteht.
-          await saveRemote(storeId, latest.current);
+          // aber nur, wenn lokal überhaupt etwas drinsteht. Eine leere Zeile
+          // anzulegen bringt nichts und macht aus "noch nichts eingetragen"
+          // versehentlich einen gespeicherten Leerstand.
+          await saveRemote(latest.current);
         }
         if (!cancelled) setRemoteStatus("idle");
         // NUR nach erfolgreichem Lesen darf hochgeladen werden.
         if (!cancelled) hydrated.current = true;
       } catch {
         // Lesen fehlgeschlagen: hydrated bleibt false, es wird NICHTS
-        // hochgeladen – sonst überschreibt der lokale Stand die Datenbank.
+        // hochgeladen. Sonst überschreibt der leere lokale Stand die Daten in
+        // der Datenbank – genau so ist eine Filiale schon einmal leer geräumt
+        // worden: Netzfehler beim Start, danach ein Klick, und weg war alles.
         if (!cancelled) setRemoteStatus("error");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [storeId]);
+  }, []);
 
   // Änderungen gebündelt hochladen (nicht bei jedem Tastendruck).
   useEffect(() => {
     if (!isRemoteConfigured || !hydrated.current) return;
     const timer = window.setTimeout(() => {
       setRemoteStatus("saving");
-      (async () => {
-        // Gespeicherte Monate anderer Geräte behalten (Archiv zusammenführen).
-        const skip = skipArchiveMerge.current;
-        skipArchiveMerge.current = false;
-        const remote = skip ? null : await loadRemote(storeId).catch(() => null);
-        const merged = mergeArchives(schedule, remote?.schedule);
-        await saveRemote(storeId, { schedule: merged, originalShifts, passwordHash });
-        if (merged !== schedule) setSchedule((cur) => mergeArchives(cur, remote?.schedule));
-      })()
+      saveRemote({ schedule, originalShifts, passwordHash })
         .then(() => setRemoteStatus("idle"))
         .catch(() => setRemoteStatus("error"));
     }, 1000);
     return () => window.clearTimeout(timer);
-  }, [storeId, schedule, originalShifts, passwordHash]);
-
-  // Offene Tage des Monats als ISO-Liste – Grundlage für das personenbezogene
-  // Monats-Soll (startDate/Eintritt) in contract.ts / validateSchedule.
-  const openDates = useMemo(() => {
-    const holidays = publicHolidays(schedule.year);
-    const overrides = overridesToMap(schedule.dateOverrides);
-    return datesOfMonth(schedule.year, schedule.month).filter(
-      (d) => !resolveDay(schedule.workHours, d, holidays, overrides).closed,
-    );
-  }, [schedule.year, schedule.month, schedule.workHours, schedule.dateOverrides]);
-
-  /**
-   * Wer in diesem Monat überhaupt beschäftigt ist (Eintritt/Austritt). Wer erst
-   * später anfängt oder schon gegangen ist, bekommt keine Zeile im Plan und keine
-   * leere Seite im Stundenzettel. Im Tab „Nhân viên" bleiben alle sichtbar.
-   */
-  const activeEmployees = useMemo(
-    () => schedule.employees.filter((employee) => openDates.some((date) => isEmployedOn(employee, date))),
-    [schedule.employees, openDates],
-  );
-
-  const openDays = useMemo(() => {
-    const byWeek = new Map<string, number>();
-    for (const date of openDates) byWeek.set(weekStartOf(date), (byWeek.get(weekStartOf(date)) ?? 0) + 1);
-    return contractOpenDays([...byWeek.values()]);
-  }, [openDates]);
+  }, [schedule, originalShifts, passwordHash]);
 
   const validation: ValidationResult = useMemo(
-    () => validateSchedule(schedule.employees, schedule.shifts, schedule.year, openDates, schedule.workHours),
-    [schedule.employees, schedule.shifts, schedule.year, openDates, schedule.workHours],
+    () => validateSchedule(schedule.employees, schedule.shifts),
+    [schedule.employees, schedule.shifts],
   );
 
   /**
    * Tage, an denen eine Stoßzeit unterbesetzt ist.
    *
    * Das ist bewusst KEIN Validierungsfehler: der Plan ist rechnerisch korrekt,
-   * es sind schlicht zu wenige Leute im Haus.
+   * es sind schlicht zu wenige Leute im Haus. Vorher fiel das nirgends auf –
+   * der Scheduler tut sein Bestes und schweigt, wenn es nicht reicht.
    */
-  const analysis = useMemo(() => {
+  const peakGaps = useMemo(() => {
+    if (schedule.shifts.length === 0) return [];
     return analyzeSchedule({
       year: schedule.year,
       month: schedule.month,
@@ -245,11 +171,8 @@ export function useSchedule(storeId: string) {
       overrides: overridesToMap(schedule.dateOverrides),
       employees: schedule.employees,
       shifts: schedule.shifts,
-      rules: storeConfig.staffingRules,
-      weights: storeConfig.dayWeights,
-    });
+    }).peakViolations;
   }, [
-    storeConfig,
     schedule.year,
     schedule.month,
     schedule.workHours,
@@ -257,51 +180,59 @@ export function useSchedule(storeId: string) {
     schedule.employees,
     schedule.shifts,
   ]);
-  const peakGaps = schedule.shifts.length === 0 ? [] : analysis.peakViolations;
 
   /**
-   * Gesperrt = eine Woche dieses Monats wurde bereits ausgegeben. Ab da darf
+   * Gesperrt = eine Woche dieses Monats wurde bereits ausgedruckt. Ab da darf
    * sich am Plan nichts mehr ändern, sonst weicht das Papier im Laden vom
-   * Stand im System ab.
+   * Stand im System ab. Alle ändernden Aktionen prüfen das selbst – die
+   * Oberfläche allein zu deaktivieren würde die Regel nicht durchsetzen.
    */
   const isLocked = Boolean(schedule.lockedAt);
 
   // ----- Firma / Monat / Öffnungszeiten -----
   const updateMeta = useCallback((patch: Partial<Schedule>) => {
-    const { schedule: s, originalShifts: original } = latest.current;
-    const nextYear = patch.year ?? s.year;
-    const nextMonth = patch.month ?? s.month;
-    if (nextYear === s.year && nextMonth === s.month) {
-      setSchedule((cur) => ({ ...cur, ...patch }));
-      return;
-    }
-    // Monatswechsel: aktuellen Plan ablegen, gespeicherten Plan des Zielmonats
-    // laden (mit seiner Sperre und „Bỏ qua cảnh báo").
-    const next = switchMonth(s, original, nextYear, nextMonth);
-    const schedulePatched = { ...next.schedule, ...patch };
-    latest.current = { ...latest.current, schedule: schedulePatched, originalShifts: next.originalShifts };
-    setSchedule(schedulePatched);
-    setOriginalShifts(next.originalShifts);
-    setGenError(null);
+    setSchedule((s) => {
+      // Ein Monatswechsel beginnt einen neuen Plan: die Sperre des alten
+      // Monats darf nicht mitwandern.
+      const monthChanged =
+        (patch.year !== undefined && patch.year !== s.year) ||
+        (patch.month !== undefined && patch.month !== s.month);
+      if (monthChanged) {
+        return { ...s, ...patch, lockedAt: undefined, printedWeeks: [] };
+      }
+      return { ...s, ...patch };
+    });
   }, []);
 
-  /** Alle Monate mit gespeichertem Plan (inkl. des aktuell geöffneten). */
-  const savedMonths = useMemo(() => listSavedMonths(schedule), [schedule]);
-
-  /** Sofort speichern, ohne die Entprell-Zeit abzuwarten (Sperren, Passwort). */
+  /**
+   * Sofort speichern, ohne die Entprell-Zeit abzuwarten.
+   *
+   * Der normale Upload wartet eine Sekunde, damit nicht bei jedem Tastendruck
+   * geschrieben wird. Für Sperren und Entsperren ist das zu langsam: wer
+   * direkt nach dem Klick neu lädt oder die App wechselt, holt sich beim
+   * nächsten Start wieder den alten Stand aus der Datenbank – die Sperre wäre
+   * dann scheinbar von selbst zurückgekommen.
+   */
   const pushNow = useCallback(async (state: PersistedState) => {
-    saveState(storeId, state);
+    saveState(state);
     if (!isRemoteConfigured || !hydrated.current) return;
     setRemoteStatus("saving");
     try {
-      await saveRemote(storeId, state);
+      await saveRemote(state);
       setRemoteStatus("idle");
     } catch {
       setRemoteStatus("error");
     }
-  }, [storeId]);
+  }, []);
 
-  /** Passwort der Filiale ändern. Gibt eine Meldung zurück oder null bei Erfolg. */
+  /**
+   * Passwort der Filiale ändern. Gibt eine Meldung zurück oder null bei Erfolg.
+   *
+   * Das alte Passwort wird abgefragt, damit nicht jeder, der gerade vor dem
+   * offenen Tablet steht, die Filiale aussperren kann. Geschrieben wird sofort
+   * (pushNow), nicht über die Ein-Sekunden-Sammlung: wer nach dem Ändern gleich
+   * neu lädt, säße sonst vor dem alten Passwort.
+   */
   const changePassword = useCallback(
     async (alt: string, neu: string): Promise<string | null> => {
       if (!(await passwordMatches(alt, latest.current.passwordHash))) {
@@ -319,7 +250,7 @@ export function useSchedule(storeId: string) {
     [pushNow],
   );
 
-  /** Merkt eine ausgegebene Woche und sperrt den Monat beim ersten Mal. */
+  /** Merkt eine gedruckte Woche und sperrt den Monat beim ersten Mal. */
   const markWeekPrinted = useCallback(
     (weekStart: string) => {
       const current = latest.current;
@@ -345,22 +276,19 @@ export function useSchedule(storeId: string) {
 
   // ----- Mitarbeiter -----
   const addEmployee = useCallback((data: Omit<Employee, "id">): string | null => {
-    if (latest.current.schedule.lockedAt) return null; // Monat ausgegeben und gesperrt
-    const emp: Employee = {
-      ...data,
-      id: newEmployeeId(),
-      name: data.name.trim() || "Nhân viên mới",
-    };
+    const id = newEmployeeId();
+    let ok = false;
     setSchedule((s) => {
-      if (s.lockedAt) return s;
-      return { ...s, employees: [...s.employees, emp] };
+      if (s.lockedAt) return s; // Monat gedruckt und gesperrt
+      ok = true;
+      return { ...s, employees: [...s.employees, { id, ...data }] };
     });
-    return emp.id;
+    return ok ? id : null;
   }, []);
 
   const updateEmployee = useCallback((id: string, patch: Partial<Employee>) => {
     setSchedule((s) => {
-      if (s.lockedAt) return s; // Monat ausgegeben und gesperrt
+      if (s.lockedAt) return s; // Monat gedruckt und gesperrt
       return {
         ...s,
         employees: s.employees.map((e) => (e.id === id ? { ...e, ...patch } : e)),
@@ -370,7 +298,7 @@ export function useSchedule(storeId: string) {
 
   const removeEmployee = useCallback((id: string) => {
     setSchedule((s) => {
-      if (s.lockedAt) return s; // Monat ausgegeben und gesperrt
+      if (s.lockedAt) return s; // Monat gedruckt und gesperrt
       return {
         ...s,
         employees: s.employees.filter((e) => e.id !== id),
@@ -380,85 +308,49 @@ export function useSchedule(storeId: string) {
   }, []);
 
   // ----- Generierung -----
-  /**
-   * Plan erzeugen – für den gewählten Monat (Popup „Tạo lịch") oder, ohne
-   * Angabe, für den aktuellen. Monat/Jahr werden im SELBEN Update gesetzt wie
-   * die Schichten.
-   */
-  /**
-   * Plan erzeugen und ZURÜCKGEBEN. Der Rückgabewert wird gebraucht, weil die
-   * Läden nacheinander geplant werden: wer im ersten Laden schon einen Tag hat,
-   * ist im nächsten an diesem Tag blockiert (blockedDays).
-   */
-  const generate = useCallback((
-    target?: { year: number; month: number },
-    blockedDays?: Record<string, readonly string[]>,
-  ): Shift[] => {
+  const generate = useCallback(() => {
+    // Ein neuer Plan hebt die Sperre des Monats auf: das alte gedruckte Blatt
+    // ist überholt, die „gedruckt"-Häkchen der Wochen verschwinden mit.
     setGenError(null);
-    const year = target?.year ?? schedule.year;
-    const month = target?.month ?? schedule.month;
-    if (!isScheduleYearAllowed(year)) {
-      setGenError(`Chỉ tạo lịch cho các năm ${SCHEDULE_YEAR_RANGE_LABEL}.`);
-      return [];
-    }
     try {
       const shifts = generateSchedule({
-        year,
-        month,
+        year: schedule.year,
+        month: schedule.month,
         workHours: schedule.workHours,
         overrides: overridesToMap(schedule.dateOverrides),
         employees: schedule.employees,
-        rules: storeConfig.staffingRules,
-        weights: storeConfig.dayWeights,
-        blockedDays,
-        storeTag: storeConfig.id,
-        seed: `${year}-${month}-${Date.now()}-${genNonce.current++}`,
       });
-      // Anderer Monat als der offene: den offenen Plan erst ins Archiv legen,
-      // sonst ginge er verloren. Derselbe Monat wird bewusst neu erzeugt.
-      // Neuer Plan: Sperre und „Bỏ qua cảnh báo" gelten nicht mehr.
-      const cur = latest.current;
-      const base =
-        year === cur.schedule.year && month === cur.schedule.month
-          ? cur.schedule
-          : switchMonth(cur.schedule, cur.originalShifts, year, month).schedule;
-      const next = { ...base, year, month, shifts, lockedAt: undefined, printedWeeks: [], underQuotaAccepted: undefined };
-      latest.current = { ...cur, schedule: next, originalShifts: shifts };
-      setSchedule(next);
+      setSchedule((s) => ({ ...s, shifts, lockedAt: undefined, printedWeeks: [] }));
       setOriginalShifts(shifts.map((sh) => ({ ...sh })));
-      setGenStamp((n) => n + 1);
-      return shifts;
     } catch (err) {
       setGenError(err instanceof Error ? err.message : String(err));
-      return [];
     }
   }, [
-    storeConfig,
     schedule.year,
     schedule.month,
     schedule.workHours,
     schedule.dateOverrides,
     schedule.employees,
+    isLocked,
   ]);
 
   const resetToOriginal = useCallback(() => {
     setSchedule((s) => {
-      if (s.lockedAt) return s; // Monat ausgegeben und gesperrt
+      if (s.lockedAt) return s; // Monat gedruckt und gesperrt
       return { ...s, shifts: originalShifts.map((sh) => ({ ...sh })) };
     });
   }, [originalShifts]);
 
   const resetAll = useCallback(() => {
-    skipArchiveMerge.current = true;
-    clearState(storeId);
-    setSchedule(emptySchedule(storeById(storeId)));
+    clearState();
+    setSchedule(emptySchedule());
     setOriginalShifts([]);
     setGenError(null);
-  }, [storeId]);
+  }, []);
 
   const saveNow = useCallback(() => {
-    saveState(storeId, { schedule, originalShifts, passwordHash });
-  }, [storeId, schedule, originalShifts, passwordHash]);
+    saveState({ schedule, originalShifts, passwordHash });
+  }, [schedule, originalShifts, passwordHash]);
 
   // ----- Ausnahmen je Datum -----
   const upsertOverride = useCallback((override: DateOverride) => {
@@ -486,10 +378,10 @@ export function useSchedule(storeId: string) {
   const editShiftTimes = useCallback(
     (
       shiftId: string,
-      changes: Partial<Pick<Shift, "startMinutes" | "endMinutes" | "pauseMinutes" | "pauseStartMinutes">>,
+      changes: Partial<Pick<Shift, "startMinutes" | "endMinutes" | "pauseMinutes">>,
     ) => {
       setSchedule((s) => {
-        if (s.lockedAt) return s; // Monat ausgegeben und gesperrt
+        if (s.lockedAt) return s; // Monat gedruckt und gesperrt
         return {
           ...s,
           shifts: s.shifts.map((sh) => (sh.id === shiftId ? updateShiftTimes(sh, changes) : sh)),
@@ -500,12 +392,12 @@ export function useSchedule(storeId: string) {
   );
 
   const addShift = useCallback(
-    (employeeId: string, date: string, start: number, end: number, pause: number, pauseStart?: number) => {
+    (employeeId: string, date: string, start: number, end: number, pause: number) => {
       setSchedule((s) => {
-        if (s.lockedAt) return s; // Monat ausgegeben und gesperrt
+        if (s.lockedAt) return s; // Monat gedruckt und gesperrt
         const exists = s.shifts.some((sh) => sh.employeeId === employeeId && sh.date === date);
         if (exists) return s;
-        return { ...s, shifts: [...s.shifts, createManualShift(employeeId, date, start, end, pause, pauseStart)] };
+        return { ...s, shifts: [...s.shifts, createManualShift(employeeId, date, start, end, pause)] };
       });
     },
     [],
@@ -513,7 +405,7 @@ export function useSchedule(storeId: string) {
 
   const deleteShift = useCallback((shiftId: string) => {
     setSchedule((s) => {
-      if (s.lockedAt) return s; // Monat ausgegeben und gesperrt
+      if (s.lockedAt) return s; // Monat gedruckt und gesperrt
       return { ...s, shifts: s.shifts.filter((sh) => sh.id !== shiftId) };
     });
   }, []);
@@ -521,7 +413,7 @@ export function useSchedule(storeId: string) {
   /** Markiert einen Tag als "Frei": entfernt eine bestehende Schicht. */
   const setFrei = useCallback((employeeId: string, date: string) => {
     setSchedule((s) => {
-      if (s.lockedAt) return s; // Monat ausgegeben und gesperrt
+      if (s.lockedAt) return s; // Monat gedruckt und gesperrt
       return {
         ...s,
         shifts: s.shifts.filter((sh) => !(sh.employeeId === employeeId && sh.date === date)),
@@ -532,7 +424,7 @@ export function useSchedule(storeId: string) {
   /** Verschiebt eine Schicht zu einem anderen Mitarbeiter (gleicher Tag). */
   const moveShiftToEmployee = useCallback((shiftId: string, targetEmployeeId: string) => {
     setSchedule((s) => {
-      if (s.lockedAt) return s; // Monat ausgegeben und gesperrt
+      if (s.lockedAt) return s; // Monat gedruckt und gesperrt
       const shift = s.shifts.find((sh) => sh.id === shiftId);
       if (!shift) return s;
       const conflict = s.shifts.some(
@@ -549,22 +441,14 @@ export function useSchedule(storeId: string) {
   }, []);
 
   return {
-    storeId,
-    storeConfig,
     schedule,
     originalShifts,
     validation,
-    activeEmployees,
     peakGaps,
-    analysis,
-    openDays,
-    openDates,
     isLocked,
     markWeekPrinted,
-    savedMonths,
     unlockMonth,
     genError,
-    genStamp,
     hasOriginal: originalShifts.length > 0,
     updateMeta,
     addEmployee,

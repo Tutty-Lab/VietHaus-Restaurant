@@ -15,6 +15,7 @@ import {
   weekdayKeyOf,
   type WeekdayKey,
 } from "./demand";
+import { PEAK_WINDOWS, minCoverageOver } from "./scheduler";
 import { publicHolidays } from "./holidays";
 import {
   effectiveWeekdayKey,
@@ -22,22 +23,13 @@ import {
   type OverrideMap,
   type WorkHoursConfig,
 } from "./workHours";
-import { coveragePoints, staffingWindows, weightedDailyTargets, workingAt, type StaffingRule } from "./staffing";
-import { weekStartOf } from "./weeks";
-import { mayWorkOn } from "./availability";
 
 export type PeakCoverage = {
   label: string;
   /** Kleinste Besetzung über die ganze Spanne. */
   minStaff: number;
-  /** Größte Besetzung über die Spanne – für die Obergrenze. */
-  maxStaff: number;
   required: number;
-  /** So viele dürfen höchstens da sein. */
-  allowed: number;
   ok: boolean;
-  startMinutes: number;
-  endMinutes: number;
 };
 
 export type DayReport = {
@@ -88,10 +80,6 @@ export type AnalyzeInput = {
   employees: Employee[];
   shifts: Shift[];
   holidays?: Set<string>;
-  /** Besetzungsregeln dieser Filiale; fehlt = die Standardregeln. */
-  rules?: readonly StaffingRule[];
-  /** Tagesgewichte dieser Filiale; fehlt = DAY_WEIGHTS. */
-  weights?: Record<WeekdayKey, number>;
 };
 
 export function analyzeSchedule(input: AnalyzeInput): ScheduleAnalysis {
@@ -107,52 +95,30 @@ export function analyzeSchedule(input: AnalyzeInput): ScheduleAnalysis {
   }
 
   // Tages-Soll genauso herleiten wie der Scheduler: geschlossene Tage tragen 0.
-  const byWeek = new Map<string, string[]>();
-  for (const date of dates) {
-    if (resolveDay(input.workHours, date, holidays, overrides).closed) continue;
-    const week = weekStartOf(date);
-    byWeek.set(week, [...(byWeek.get(week) ?? []), date]);
-  }
-  const dailyTargets = new Map<string, number>();
-  for (const weekDates of byWeek.values()) {
-    const hours = weekDates.reduce((sum, date) => sum + (byDate.get(date) ?? []).reduce((acc, shift) => acc + shift.paidMinutes, 0), 0) / 60;
-    const openMinutesOf = (value: string) => resolveDay(input.workHours, value, holidays, overrides).blocks
-      .reduce((sum, block) => sum + (block.endMinutes - block.startMinutes), 0);
-    for (const [date, target] of weightedDailyTargets(weekDates, hours, (value) => effectiveWeekdayKey(value, holidays), openMinutesOf, input.weights)) {
-      dailyTargets.set(date, target);
-    }
-  }
-  const employeesById = new Map(input.employees.map((employee) => [employee.id, employee]));
+  const totalPaidMinutes = input.shifts.reduce((sum, s) => sum + s.paidMinutes, 0);
+  const weightOf = (date: string): number =>
+    resolveDay(input.workHours, date, holidays, overrides).closed
+      ? 0
+      : DAY_WEIGHTS[effectiveWeekdayKey(date, holidays)];
+  const totalWeight = dates.reduce((sum, d) => sum + weightOf(d), 0);
 
   const days: DayReport[] = [];
   for (const date of dates) {
     const day = resolveDay(input.workHours, date, holidays, overrides);
     const onDay = byDate.get(date) ?? [];
-    const available = onDay.filter((shift) => {
-      const employee = employeesById.get(shift.employeeId);
-      return employee && mayWorkOn(employee, date);
-    });
 
     const peaks: PeakCoverage[] = [];
     if (!day.closed) {
-      for (const peak of staffingWindows(day.blocks, effectiveWeekdayKey(date, holidays), input.rules)) {
-        const from = peak.startMinutes;
-        const to = peak.endMinutes;
-        const points = coveragePoints(available, from, to).slice(0, -1);
-        const counts = points.map((minute) => new Set(available.filter((shift) => workingAt(shift, minute)).map((shift) => shift.employeeId)).size);
-        const minStaff = counts.length ? Math.min(...counts) : 0;
-        const maxStaff = counts.length ? Math.max(...counts) : 0;
+      for (const peak of PEAK_WINDOWS) {
+        const from = Math.max(peak.startMinutes, day.window.startMinutes);
+        const to = Math.min(peak.endMinutes, day.window.endMinutes);
+        if (to <= from) continue; // Spitze liegt außerhalb der Arbeitszeit
+        const minStaff = minCoverageOver(onDay, from, to);
         peaks.push({
           label: peak.label,
           minStaff,
-          maxStaff,
           required: peak.minStaff,
-          allowed: peak.maxStaff,
-          // Nur ZU WENIG Leute ist ein Problem. Zu viele heißt: gut besetzt –
-          // Wunsch des Betriebs, deshalb keine Warnung „quá đông" mehr.
           ok: minStaff >= peak.minStaff,
-          startMinutes: from,
-          endMinutes: to,
         });
       }
     }
@@ -163,7 +129,7 @@ export function analyzeSchedule(input: AnalyzeInput): ScheduleAnalysis {
       closed: day.closed,
       shiftCount: onDay.length,
       paidHours: onDay.reduce((sum, s) => sum + s.paidMinutes, 0) / 60,
-      targetHours: dailyTargets.get(date) ?? 0,
+      targetHours: totalWeight > 0 ? (totalPaidMinutes * weightOf(date)) / totalWeight / 60 : 0,
       peaks,
     });
   }
@@ -203,8 +169,7 @@ export function analyzeSchedule(input: AnalyzeInput): ScheduleAnalysis {
       deviation: avgTargetHours > 0 ? avgHours / avgTargetHours - 1 : 0,
     });
   }
-  const weights = input.weights ?? DAY_WEIGHTS;
-  weekdayFit.sort((a, b) => weights[a.weekday] - weights[b.weekday]);
+  weekdayFit.sort((a, b) => DAY_WEIGHTS[a.weekday] - DAY_WEIGHTS[b.weekday]);
 
   const lengthHistogram = new Map<number, number>();
   for (const s of input.shifts) {
@@ -215,9 +180,8 @@ export function analyzeSchedule(input: AnalyzeInput): ScheduleAnalysis {
   const hoursByEmployee = new Map<string, number>();
   for (const e of input.employees) hoursByEmployee.set(e.id, 0);
   for (const s of input.shifts) {
-    hoursByEmployee.set(s.employeeId, (hoursByEmployee.get(s.employeeId) ?? 0) + s.paidMinutes);
+    hoursByEmployee.set(s.employeeId, (hoursByEmployee.get(s.employeeId) ?? 0) + s.paidMinutes / 60);
   }
-  for (const [employeeId, minutes] of hoursByEmployee) hoursByEmployee.set(employeeId, minutes / 60);
 
   return {
     days,

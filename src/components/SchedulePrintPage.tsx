@@ -20,55 +20,18 @@ import { format } from "date-fns";
  */
 export type SchedulePrintLayout = "byEmployee" | "byDate";
 
-/**
- * Eine Zelle kann MEHRERE Dienste enthalten – mittags und abends. Steht dort
- * nur einer, fehlt auf dem ausgehängten Plan die halbe Wahrheit.
- */
-function ShiftCell({ shifts, closed }: { shifts: Shift[]; closed: boolean }) {
-  if (shifts.length === 0) {
-    return <span className="text-slate-400">{closed ? "—" : "frei"}</span>;
-  }
-  const isMulti = shifts.length > 1;
+function ShiftCell({ shift, closed }: { shift: Shift | undefined; closed: boolean }) {
+  if (!shift) return <span className="text-slate-400">{closed ? "—" : "frei"}</span>;
   return (
-    <div className="flex flex-col h-full justify-center">
-      {shifts.map((shift, idx) => {
-        const shiftTag = isMulti
-          ? idx === 0
-            ? "Ca sáng"
-            : idx === 1
-              ? "Ca chiều"
-              : `Ca ${idx + 1}`
-          : null;
-        return (
-          <div
-            key={shift.id}
-            className={`${idx > 0 ? "border-t border-slate-300 pt-1 mt-1" : ""} text-center`}
-          >
-            <div className="whitespace-nowrap">
-              {shiftTag && (
-                <span className="inline-block text-[9px] font-semibold text-slate-700 bg-slate-100 border border-slate-300 rounded px-1 mr-1">
-                  {shiftTag}
-                </span>
-              )}
-              <span className="font-medium">
-                {minutesToTime(shift.startMinutes)}–{minutesToTime(shift.endMinutes)}
-              </span>
-            </div>
-            <div className="text-[10px] text-slate-500">
-              {minutesToShortHours(shift.paidMinutes)}
-              {shift.pauseMinutes > 0 &&
-                ` · P ${shift.pauseMinutes}${
-                  shift.pauseStartMinutes != null
-                    ? ` (${minutesToTime(shift.pauseStartMinutes)}–${minutesToTime(
-                        shift.pauseStartMinutes + shift.pauseMinutes,
-                      )})`
-                    : ""
-                }`}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+    <>
+      <div className="whitespace-nowrap">
+        {minutesToTime(shift.startMinutes)}–{minutesToTime(shift.endMinutes)}
+      </div>
+      <div className="text-[10px] text-slate-500">
+        {minutesToShortHours(shift.paidMinutes)}
+        {shift.pauseMinutes > 0 && ` · P ${shift.pauseMinutes}`}
+      </div>
+    </>
   );
 }
 
@@ -87,29 +50,21 @@ export function SchedulePrintPage({
   /** Nur diese Mitarbeiter zeigen; leer/fehlend => alle (ganzer Laden). */
   employeeIds?: string[];
 }) {
-  // "Tất cả" => alle; sonst genau die gewählte Person. Behält die Reihenfolge
-  // aus dem Plan bei, egal wie die id-Liste sortiert ist.
+  // "Tất cả" => alle; sonst genau die gewählte Person (Reihenfolge wie im Plan).
   const emps =
     employeeIds && employeeIds.length
       ? schedule.employees.filter((e) => employeeIds.includes(e.id))
       : schedule.employees;
-
-  const byKey = new Map<string, Shift[]>();
-  for (const s of schedule.shifts) {
-    const key = `${s.employeeId}#${s.date}`;
-    const liste = byKey.get(key);
-    if (liste) liste.push(s);
-    else byKey.set(key, [s]);
-  }
-  for (const liste of byKey.values()) liste.sort((a, b) => a.startMinutes - b.startMinutes);
+  const byKey = new Map<string, Shift>();
+  for (const s of schedule.shifts) byKey.set(`${s.employeeId}#${s.date}`, s);
 
   const holidays = publicHolidays(schedule.year);
   const holidayNames = publicHolidayNames(schedule.year);
   const overrides = Object.fromEntries(schedule.dateOverrides.map((o) => [o.date, o]));
   const closedOn = (d: string) => isDayClosed(schedule.workHours, d, holidays, overrides);
 
-  const th = "px-2 py-1 font-semibold";
-  const td = "px-2 py-[3px]";
+  const th = "border border-slate-300 px-2 py-1 font-semibold";
+  const td = "border border-slate-300 px-2 py-[3px]";
 
   return (
     <div className="stundenzettel-page bg-white text-slate-900 mx-auto max-w-[210mm] p-6 text-[12px]">
@@ -126,7 +81,7 @@ export function SchedulePrintPage({
 
       {layout === "byEmployee" ? (
         // Mitarbeiter als Zeilen, Tage als Spalten – wie in der App.
-        <table className="stundenzettel-table w-full text-[11px]">
+        <table className="w-full border-collapse text-[11px]">
           <thead>
             <tr className="bg-slate-100">
               <th className={`${th} text-left`}>Mitarbeiter</th>
@@ -141,14 +96,14 @@ export function SchedulePrintPage({
           </thead>
           <tbody>
             {emps.map((e) => {
-              const own = dates.flatMap((d) => byKey.get(`${e.id}#${d}`) ?? []);
+              const own = dates.map((d) => byKey.get(`${e.id}#${d}`));
               const total = own.reduce((sum, s) => sum + (s?.paidMinutes ?? 0), 0);
               return (
                 <tr key={e.id}>
                   <td className={`${td} whitespace-nowrap`}>{e.name}</td>
-                  {dates.map((d) => (
+                  {dates.map((d, i) => (
                     <td key={d} className={`${td} text-center ${closedOn(d) ? "bg-slate-50" : ""}`}>
-                      <ShiftCell shifts={byKey.get(`${e.id}#${d}`) ?? []} closed={closedOn(d)} />
+                      <ShiftCell shift={own[i]} closed={closedOn(d)} />
                     </td>
                   ))}
                   <td className={`${td} text-right font-medium`}>{minutesToShortHours(total)}</td>
@@ -173,7 +128,7 @@ export function SchedulePrintPage({
         </table>
       ) : (
         // Tage als Zeilen – für den ganzen Monat.
-        <table className="stundenzettel-table w-full text-[11px]">
+        <table className="w-full border-collapse text-[11px]">
           <thead>
             <tr className="bg-slate-100">
               <th className={`${th} text-left`}>Datum</th>
@@ -198,7 +153,7 @@ export function SchedulePrintPage({
                   </td>
                   {emps.map((e) => (
                     <td key={e.id} className={`${td} text-center`}>
-                      <ShiftCell shifts={byKey.get(`${e.id}#${d}`) ?? []} closed={closed} />
+                      <ShiftCell shift={byKey.get(`${e.id}#${d}`)} closed={closed} />
                     </td>
                   ))}
                 </tr>

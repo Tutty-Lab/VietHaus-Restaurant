@@ -10,7 +10,7 @@ import {
   weekdayKeyOf,
   type WeekdayKey,
 } from "../lib/demand";
-import type { DayBlocks, DayWindow, WorkHoursConfig } from "../lib/workHours";
+import type { DayWindow, WorkHoursConfig } from "../lib/workHours";
 import { publicHolidayNames } from "../lib/holidays";
 import { isoLabel } from "../lib/shiftOps";
 
@@ -39,92 +39,59 @@ const WEEKDAY_ORDER: WeekdayKey[] = [
   "sunday",
 ];
 
-/**
- * Eine Zeile je Wochentag – mit BELIEBIG VIELEN Blöcken, damit sich eine
- * Mittagsschließung (Di–Sa 14:30–16:30) eintragen lässt.
- */
-function BlockRow({
+/** Zeile mit zwei Zeit-Feldern (Beginn/Ende) für ein Zeitfenster. */
+function WindowRow({
   label,
   hint,
-  blocks,
+  window,
   onChange,
   closed,
   onToggleClosed,
 }: {
   label: string;
   hint?: string;
-  blocks: DayBlocks;
-  onChange: (next: DayBlocks) => void;
-  /** Optional: Schließen-Umschalter (z.B. Montag). */
+  window: DayWindow;
+  onChange: (next: DayWindow) => void;
+  /** Optional: Schließen-Umschalter (z.B. Sonntag). */
   closed?: boolean;
   onToggleClosed?: (next: boolean) => void;
 }) {
-  const setBlock = (i: number, patch: Partial<DayWindow>) =>
-    onChange(blocks.map((b, k) => (k === i ? { ...b, ...patch } : b)));
-
   return (
-    <div className="flex items-start gap-2 py-1.5">
-      <div className="w-24 sm:w-40 shrink-0 pt-1.5">
+    <div className="flex items-center gap-2 py-1.5">
+      <div className="w-24 sm:w-40 shrink-0">
         <div className="text-sm text-slate-700 leading-tight">{label}</div>
         {hint && <div className="text-[11px] text-slate-400">{hint}</div>}
       </div>
-
       {closed ? (
-        <div className="flex-1 pt-1.5 text-sm font-medium text-rose-600">Đóng cửa</div>
+        <div className="flex-1 text-sm font-medium text-rose-600">Đóng cửa</div>
       ) : (
-        <div className="flex-1 space-y-1">
-          {blocks.map((b, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input
-                type="time"
-                className={`${timeClass} min-w-0 flex-1 sm:flex-none`}
-                value={minutesToTime(b.startMinutes)}
-                onChange={(e) => {
-                  try {
-                    setBlock(i, { startMinutes: timeToMinutes(e.target.value) });
-                  } catch {
-                    /* nhập chưa xong */
-                  }
-                }}
-              />
-              <span className="text-slate-400">–</span>
-              <input
-                type="time"
-                className={`${timeClass} min-w-0 flex-1 sm:flex-none`}
-                value={minutesToTime(b.endMinutes)}
-                onChange={(e) => {
-                  try {
-                    setBlock(i, { endMinutes: timeToMinutes(e.target.value) });
-                  } catch {
-                    /* nhập chưa xong */
-                  }
-                }}
-              />
-              {blocks.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => onChange(blocks.filter((_, k) => k !== i))}
-                  className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
-                  title="Xoá khung này"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={() =>
-              onChange([
-                ...blocks,
-                { startMinutes: blocks[blocks.length - 1]?.endMinutes ?? 0, endMinutes: 22 * 60 },
-              ])
-            }
-            className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-          >
-            + Thêm khung giờ
-          </button>
-        </div>
+        <>
+          <input
+            type="time"
+            className={`${timeClass} min-w-0 flex-1 sm:flex-none`}
+            value={minutesToTime(window.startMinutes)}
+            onChange={(e) => {
+              try {
+                onChange({ ...window, startMinutes: timeToMinutes(e.target.value) });
+              } catch {
+                /* nhập chưa xong */
+              }
+            }}
+          />
+          <span className="text-slate-400">–</span>
+          <input
+            type="time"
+            className={`${timeClass} min-w-0 flex-1 sm:flex-none`}
+            value={minutesToTime(window.endMinutes)}
+            onChange={(e) => {
+              try {
+                onChange({ ...window, endMinutes: timeToMinutes(e.target.value) });
+              } catch {
+                /* nhập chưa xong */
+              }
+            }}
+          />
+        </>
       )}
       {onToggleClosed && (
         <label className="flex items-center gap-1 text-[11px] text-slate-500 shrink-0 ml-1">
@@ -141,7 +108,8 @@ function BlockRow({
 }
 
 export function SettingsTab({ store }: { store: UseScheduleReturn }) {
-  const { schedule, updateMeta, upsertOverride, removeOverride, changePassword } = store;
+  const { schedule, updateMeta, upsertOverride, removeOverride , changePassword, hasOwnPassword } = store;
+  const years = Array.from({ length: 7 }, (_, i) => new Date().getFullYear() - 1 + i);
 
   // ---- Ngày đặc biệt (Ausnahmen) ----
   const monthDates = useMemo(
@@ -150,8 +118,8 @@ export function SettingsTab({ store }: { store: UseScheduleReturn }) {
   );
   const [ovDate, setOvDate] = useState<string>("");
   const [ovMode, setOvMode] = useState<"closed" | "custom">("closed");
-  const [ovStart, setOvStart] = useState("11:30");
-  const [ovEnd, setOvEnd] = useState("22:00");
+  const [ovStart, setOvStart] = useState("10:30");
+  const [ovEnd, setOvEnd] = useState("16:00");
   const [ovNote, setOvNote] = useState("");
 
   const effectiveOvDate = ovDate || monthDates[0];
@@ -175,7 +143,7 @@ export function SettingsTab({ store }: { store: UseScheduleReturn }) {
     setOvNote("");
   }
 
-  function setWeekdayWindow(key: WeekdayKey, next: DayBlocks) {
+  function setWeekdayWindow(key: WeekdayKey, next: DayWindow) {
     const workHours: WorkHoursConfig = {
       ...schedule.workHours,
       perWeekday: { ...schedule.workHours.perWeekday, [key]: next },
@@ -183,7 +151,7 @@ export function SettingsTab({ store }: { store: UseScheduleReturn }) {
     updateMeta({ workHours });
   }
 
-  function setHolidayWindow(next: DayBlocks) {
+  function setHolidayWindow(next: DayWindow) {
     updateMeta({ workHours: { ...schedule.workHours, holiday: next } });
   }
 
@@ -200,7 +168,7 @@ export function SettingsTab({ store }: { store: UseScheduleReturn }) {
     [schedule.dateOverrides],
   );
 
-  // Feiertage (Bayern) im gewählten Monat.
+  // Feiertage (Sachsen) im gewählten Monat.
   const holidaysThisMonth = useMemo(() => {
     const names = publicHolidayNames(schedule.year);
     const monthDates = new Set(datesOfMonth(schedule.year, schedule.month));
@@ -215,7 +183,7 @@ export function SettingsTab({ store }: { store: UseScheduleReturn }) {
         <h2 className="text-base font-semibold text-slate-900 mb-4">Cài đặt chung</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
-            <Field label="Cửa hàng">
+            <Field label="Tên công ty / cửa hàng">
               <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
                 {schedule.companyName}
               </div>
@@ -230,73 +198,60 @@ export function SettingsTab({ store }: { store: UseScheduleReturn }) {
             </Field>
           </div>
 
-          <div className="md:col-span-2 text-xs text-slate-500">
-            Tháng/năm chọn chung cho mọi quán ở thanh trên cùng — bản in của hai quán phải cùng kỳ.
-          </div>
+          <Field label="Tháng">
+            <select
+              className={inputClass}
+              value={schedule.month}
+              onChange={(e) => updateMeta({ month: Number(e.target.value) })}
+            >
+              {MONTH_NAMES_VI.map((name, i) => (
+                <option key={name} value={i + 1}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Năm">
+            <select
+              className={inputClass}
+              value={schedule.year}
+              onChange={(e) => updateMeta({ year: Number(e.target.value) })}
+            >
+              {years.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </Field>
         </div>
       </section>
 
-      {/* „Nâng cao": khung giờ từng thứ ít khi đổi – thu gọn mặc định, bấm để mở. */}
-      <details className="group rounded-lg bg-white border border-slate-200 shadow-sm">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg p-4 sm:p-5 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
-          <h2 className="text-base font-semibold text-slate-900">Nâng cao · Giờ làm theo ngày</h2>
-          <span className="text-lg text-slate-400 transition-transform group-open:rotate-90" aria-hidden="true">›</span>
-        </summary>
-        <div className="border-t border-slate-100 p-4 sm:p-5">
+      <section className="rounded-lg bg-white border border-slate-200 p-4 sm:p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900 mb-1">Giờ làm theo ngày</h2>
         <p className="text-xs text-slate-500 mb-3">
           Đây là <span className="font-medium">khung giờ làm</span> (giờ xếp ca) cho mỗi ngày trong
           tuần. Ca sáng bắt đầu ở đầu khung, ca tối kết thúc ở cuối khung — có thể khác giờ mở cửa cho
           khách.
         </p>
 
-        {/* Chọn nhanh: số ngày + các ngày làm trong tuần. Bấm để bật/tắt. */}
-        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <div className="text-sm font-medium text-slate-700 mb-2">Ngày làm trong tuần</div>
-          <div className="flex flex-wrap gap-1.5">
-            {WEEKDAY_ORDER.map((key) => {
-              const open = !schedule.workHours.closedWeekdays?.[key];
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={open}
-                  onClick={() => setWeekdayClosed(key, open)}
-                  className={`rounded-full px-3 py-1.5 text-sm font-medium border transition-colors ${
-                    open
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-300 bg-white text-slate-400 line-through"
-                  }`}
-                >
-                  {WEEKDAY_SHORT_VI[key]}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-2 text-xs text-slate-500">
-            Mở{" "}
-            <b>
-              {WEEKDAY_ORDER.filter((k) => !schedule.workHours.closedWeekdays?.[k]).length} ngày/tuần
-            </b>{" "}
-            · bấm vào thứ để bật/tắt ngày làm. Định mức tháng tự tính lại theo số ngày mở.
-          </div>
-        </div>
-
         <div>
           {WEEKDAY_ORDER.map((key) => (
-            <BlockRow
+            <WindowRow
               key={key}
               label={WEEKDAY_LABELS_VI[key]}
-              blocks={schedule.workHours.perWeekday[key]}
+              window={schedule.workHours.perWeekday[key]}
               onChange={(next) => setWeekdayWindow(key, next)}
               closed={schedule.workHours.closedWeekdays?.[key]}
               onToggleClosed={(next) => setWeekdayClosed(key, next)}
             />
           ))}
           <div className="my-2 border-t border-slate-200" />
-          <BlockRow
+          <WindowRow
             label="Ngày lễ"
-            hint="Tự áp dụng cho ngày lễ Baden-Württemberg"
-            blocks={schedule.workHours.holiday}
+            hint="Tự áp dụng cho ngày lễ Sachsen"
+            window={schedule.workHours.holiday}
             onChange={setHolidayWindow}
           />
         </div>
@@ -304,7 +259,7 @@ export function SettingsTab({ store }: { store: UseScheduleReturn }) {
         {holidaysThisMonth.length > 0 && (
           <div className="mt-3 rounded bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
             <div className="font-medium mb-1">
-              Ngày lễ Baden-Württemberg trong {MONTH_NAMES_VI[schedule.month - 1]} {schedule.year}:
+              Ngày lễ Sachsen trong {MONTH_NAMES_VI[schedule.month - 1]} {schedule.year}:
             </div>
             <ul className="space-y-1">
               {holidaysThisMonth.map(([iso, name]) => {
@@ -332,19 +287,10 @@ export function SettingsTab({ store }: { store: UseScheduleReturn }) {
             </ul>
           </div>
         )}
-        </div>
-      </details>
+      </section>
 
-      {/* Ngày đặc biệt: thu gọn như Nâng cao; số ngày đã đặt hiện ngay trên tiêu đề. */}
-      <details className="group rounded-lg bg-white border border-slate-200 shadow-sm">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg p-4 sm:p-5 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
-          <h2 className="text-base font-semibold text-slate-900">Ngày đặc biệt
-            {schedule.dateOverrides.length > 0 && (
-              <span className="ml-2 text-sm font-normal text-slate-500">({schedule.dateOverrides.length} ngày)</span>
-            )}</h2>
-          <span className="text-lg text-slate-400 transition-transform group-open:rotate-90" aria-hidden="true">›</span>
-        </summary>
-        <div className="border-t border-slate-100 p-4 sm:p-5">
+      <section className="rounded-lg bg-white border border-slate-200 p-4 sm:p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900 mb-1">Ngày đặc biệt</h2>
         <p className="text-xs text-slate-500 mb-3">
           Cài đặt riêng cho một ngày cụ thể: <span className="font-medium">đóng cửa cả ngày</span> hoặc
           <span className="font-medium"> giờ làm riêng</span> (VD nghỉ nửa ngày). Sẽ ghi đè giờ theo thứ
@@ -455,10 +401,9 @@ export function SettingsTab({ store }: { store: UseScheduleReturn }) {
         ) : (
           <p className="mt-3 text-xs text-slate-400">Chưa có ngày đặc biệt nào.</p>
         )}
-        </div>
-      </details>
+      </section>
 
-      <PasswordSection onChange={changePassword} />
+      <PasswordSection hasOwnPassword={hasOwnPassword} onChange={changePassword} />
     </div>
   );
 }
@@ -471,8 +416,10 @@ export function SettingsTab({ store }: { store: UseScheduleReturn }) {
  * gerade vor dem offenen Tablet steht, die Filiale aussperren kann.
  */
 function PasswordSection({
+  hasOwnPassword,
   onChange,
 }: {
+  hasOwnPassword: boolean;
   onChange: (alt: string, neu: string) => Promise<string | null>;
 }) {
   const [alt, setAlt] = useState("");
@@ -504,12 +451,17 @@ function PasswordSection({
   }
 
   return (
-    <details className="group rounded-lg bg-white border border-slate-200 shadow-sm">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg p-4 sm:p-5 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
-        <h2 className="text-base font-semibold text-slate-900">Mật khẩu vào ứng dụng</h2>
-        <span className="text-lg text-slate-400 transition-transform group-open:rotate-90" aria-hidden="true">›</span>
-      </summary>
-      <div className="border-t border-slate-100 p-4 sm:p-5">
+    <section className="rounded-lg bg-white border border-slate-200 p-4 sm:p-5 shadow-sm">
+      <h2 className="text-base font-semibold text-slate-900">Mật khẩu vào ứng dụng</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Mật khẩu này chỉ để che mắt người ngoài khi máy để mở ở quán, không phải bảo mật
+        thật. Đổi ở đây thì mọi máy của quán đều dùng mật khẩu mới.
+      </p>
+      {!hasOwnPassword && (
+        <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Quán đang dùng <b>mật khẩu mặc định</b>. Nên đổi sang mật khẩu riêng.
+        </p>
+      )}
 
       <form onSubmit={absenden} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="flex flex-col sm:w-44">
@@ -553,7 +505,6 @@ function PasswordSection({
 
       {fehler && <p className="mt-2 text-sm text-rose-600">{fehler}</p>}
       {fertig && <p className="mt-2 text-sm text-emerald-700">Đã đổi mật khẩu.</p>}
-      </div>
-    </details>
+    </section>
   );
 }

@@ -10,11 +10,6 @@ export default defineConfig({
   // Achtung: NEXT_PUBLIC_*/VITE_* landen im öffentlichen Bundle. Niemals
   // Service-Role-Key oder Postgres-Passwort so benennen.
   envPrefix: ["VITE_", "NEXT_PUBLIC_"],
-  // Build-Zeitstempel, sichtbar in der App – so lässt sich sofort erkennen, ob
-  // wirklich die NEUE Version läuft oder noch die alte aus dem PWA-Cache.
-  define: {
-    __BUILD__: JSON.stringify(new Date().toISOString().replace("T", " ").slice(0, 16)),
-  },
   plugins: [
     react(),
     VitePWA({
@@ -49,28 +44,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // index.html NICHT vorab cachen und nicht als navigateFallback ausliefern:
-        // sonst startet die App vom Home-Bildschirm (iPhone) immer mit der ALTEN
-        // Seite aus dem Cache, und ein Deploy kam erst nach Löschen/Neu-Anheften an.
-        // Stattdessen holt jede Navigation die Seite zuerst vom Netz (NetworkFirst),
-        // offline gilt die zuletzt geladene Kopie.
-        globPatterns: ["**/*.{js,css,svg,woff2}"],
-        navigateFallback: null,
-        runtimeCaching: [
-          {
-            urlPattern: ({ request }) => request.mode === "navigate",
-            handler: "NetworkFirst",
-            options: { cacheName: "pages", networkTimeoutSeconds: 4 },
-          },
-        ],
-        // Neue Version SOFORT übernehmen statt erst, wenn alle Tabs zu sind.
-        // Sonst servierte der Service-Worker nach einem Deploy weiter die ALTE
-        // App aus dem Cache – Korrekturen (PDF-Tabelle, Druck-Fußzeile …) kamen
-        // beim Nutzer erst Tage später an. Mit skipWaiting/clientsClaim aktiviert
-        // sich die neue Version beim nächsten Laden und lädt einmal frisch nach.
-        skipWaiting: true,
-        clientsClaim: true,
-        cleanupOutdatedCaches: true,
+        globPatterns: ["**/*.{js,css,html,svg,woff2}"],
+        navigateFallback: "index.html",
       },
       devOptions: {
         enabled: false,
