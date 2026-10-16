@@ -2,17 +2,6 @@ import type { UseScheduleReturn } from "../hooks/useSchedule";
 import { minutesToDecimalHours, minutesToTime } from "../lib/time";
 import { PEAK_WINDOWS } from "../lib/scheduler";
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: string }) {
-  return (
-    <div className="rounded-lg bg-white border border-slate-200 px-2.5 py-1.5 sm:px-3 sm:py-2 shadow-sm">
-      <div className="text-[11px] sm:text-xs text-slate-500 leading-tight">{label}</div>
-      <div className={`text-base sm:text-lg font-semibold leading-tight ${accent ?? "text-slate-900"}`}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
 /** "2026-08-27" -> "27.08." – kurz, weil oft mehrere Tage nebeneinander stehen. */
 function shortDate(iso: string): string {
   const [, month, day] = iso.split("-");
@@ -40,20 +29,39 @@ export function Dashboard({ store }: { store: UseScheduleReturn }) {
       ? "text-emerald-600"
       : "text-rose-600";
 
+  const pct = targetMin > 0 ? Math.min(100, Math.round((plannedMin / targetMin) * 100)) : 0;
+  const statusPill =
+    statusAccent === "text-emerald-600"
+      ? "bg-emerald-50 text-emerald-700"
+      : statusAccent === "text-rose-600"
+        ? "bg-rose-50 text-rose-700"
+        : (statusAccent as string) === "text-amber-600"
+          ? "bg-amber-50 text-amber-700"
+          : "bg-slate-100 text-slate-500";
+
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-        <Stat label="Số nhân viên" value={String(schedule.employees.length)} />
-        <Stat label="Toàn thời gian" value={String(vz)} />
-        <Stat label="Bán thời gian" value={String(tz)} />
-        <Stat label="Minijob" value={String(mj)} />
-        <Stat label="Tổng giờ định mức" value={`${minutesToDecimalHours(targetMin)} h`} />
-        <Stat label="Tổng giờ đã xếp" value={`${minutesToDecimalHours(plannedMin)} h`} />
-        <Stat label="Trạng thái kiểm tra" value={statusValue} accent={statusAccent} />
+      {/* Eine Karte statt Zahlenkacheln (wie die Demo): Stunden als Balken. */}
+      <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm text-slate-500">Giờ đã xếp · {schedule.employees.length} người ({vz} TT · {tz} BT · {mj} MJ)</span>
+          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusPill}`}>
+            {statusValue === "Hợp lệ" ? "✓ Hợp lệ" : statusValue}
+          </span>
+        </div>
+        <div className="mt-1 flex items-baseline gap-1.5">
+          <span className="text-2xl font-semibold text-slate-900">{minutesToDecimalHours(plannedMin)}</span>
+          <span className="text-sm text-slate-500">/ {minutesToDecimalHours(targetMin)} h định mức</span>
+          <span className="ml-auto text-sm font-semibold text-slate-500">{pct}%</span>
+        </div>
+        <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-slate-100">
+          <div className="bg-slate-700" style={{ width: `${pct}%` }} />
+          {plannedMin > 0 && pct < 100 && <div className="bg-amber-300" style={{ width: `${100 - pct}%` }} />}
+        </div>
       </div>
       {notGenerated && schedule.employees.length > 0 && (
         <div className="mt-2 rounded bg-sky-50 border border-sky-200 text-sky-800 text-sm px-3 py-2">
-          Chưa có lịch. Sang tab „Lịch làm việc" và bấm „Tạo lịch làm việc".
+          Chưa có lịch — bấm Tạo lịch.
         </div>
       )}
       {validation.valid && schedule.shifts.length > 0 && (
