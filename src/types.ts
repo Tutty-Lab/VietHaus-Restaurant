@@ -18,13 +18,13 @@ export type EmploymentType = "VOLLZEIT" | "TEILZEIT" | "MINIJOB";
  *
  * Früher standen hier zwei getrennte Zahlen (höchstens 3 Stammkräfte und 2
  * Minijobs, die heutige Besetzung). Der Betrieb zählt aber nur die Köpfe: wie
- * sich die fünf Leute auf Vollzeit, Teilzeit und Minijob verteilen, ist seine
+ * sich die sieben Leute auf Vollzeit, Teilzeit und Minijob verteilen, ist seine
  * Sache und keine Regel der App.
  *
  * Angabe des Betriebs, keine Rechtsvorschrift – deshalb eine Warnung und kein
  * harter Riegel.
  */
-export const MAX_EMPLOYEES = 5;
+export const MAX_EMPLOYEES = 7;
 
 /**
  * Minijob bei VietHaus: 43 Stunden im Monat laut Vertrag.
