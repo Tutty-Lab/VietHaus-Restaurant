@@ -1,3 +1,4 @@
+import { employmentPeriodError, monthlyTargetMinutesFor, openDatesFor } from "../lib/employeePeriod";
 import { useMemo, useState } from "react";
 import type { UseScheduleReturn } from "../hooks/useSchedule";
 import type { Employee, EmploymentType } from "../types";
@@ -41,10 +42,14 @@ type Draft = {
   hours: string;
   availableWeekdays: WeekdayKey[]; // [] = mọi ngày
   maxDays: string;
+  startDate: string;
+  endDate: string;
 };
 
 function draftFrom(emp?: Employee): Draft {
   return {
+    startDate: emp?.startDate ?? "",
+    endDate: emp?.endDate ?? "",
     name: emp?.name ?? "",
     employmentType: emp?.employmentType ?? "VOLLZEIT",
     hours: emp ? String(emp.targetMinutes / 60) : "176",
@@ -60,6 +65,8 @@ function draftToEmployee(d: Draft): Omit<Employee, "id"> {
     name: d.name.trim() || "Nhân viên mới",
     employmentType: d.employmentType,
     targetMinutes: stunden * 60,
+    startDate: d.startDate || undefined,
+    endDate: d.endDate || undefined,
     availableWeekdays:
       d.availableWeekdays.length === 0 || d.availableWeekdays.length === 7
         ? undefined
@@ -123,7 +130,7 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
                 onClick={() => setOffen(emp.id)}
                 className="w-full text-left rounded-lg border border-slate-200 p-3 flex items-center gap-3 hover:bg-slate-50 active:bg-slate-100 transition-colors"
               >
-                <EmployeeSummaryRow emp={emp} />
+                <EmployeeSummaryRow emp={emp} target={monthlyTargetMinutesFor(emp, openDatesFor(schedule))} />
                 <span className="text-slate-300 text-lg leading-none">›</span>
               </button>
             </li>
@@ -145,6 +152,7 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
         <EmployeeSheet
           key={bearbeitet?.id ?? "new"}
           employee={bearbeitet}
+          openDates={openDatesFor(schedule)}
           onClose={() => setOffen(null)}
           onSave={(felder) => {
             if (bearbeitet) updateEmployee(bearbeitet.id, felder);
@@ -165,8 +173,8 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
   );
 }
 
-function EmployeeSummaryRow({ emp }: { emp: Employee }) {
-  const stunden = emp.targetMinutes / 60;
+function EmployeeSummaryRow({ emp, target }: { emp: Employee; target: number }) {
+  const stunden = target / 60;
   const info = splitInfo(stunden, emp.employmentType);
   const tooMany = stunden > WARN_HOURS;
   const tage = emp.availableWeekdays;
@@ -182,7 +190,7 @@ function EmployeeSummaryRow({ emp }: { emp: Employee }) {
       </div>
       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
         <span>
-          {stunden}h · <span className={info.ok ? "" : "text-rose-600"}>{info.text}</span>
+          {stunden}h tháng này / hợp đồng {emp.targetMinutes / 60}h · <span className={info.ok ? "" : "text-rose-600"}>{info.text}</span>
         </span>
         {tage && tage.length > 0 && (
           <span className="text-slate-400">· {tage.map((k) => WEEKDAY_SHORT_VI[k]).join(" ")}</span>
@@ -197,11 +205,13 @@ function EmployeeSummaryRow({ emp }: { emp: Employee }) {
 
 function EmployeeSheet({
   employee,
+  openDates,
   onClose,
   onSave,
   onDelete,
 }: {
   employee?: Employee;
+  openDates: string[];
   onClose: () => void;
   onSave: (felder: Omit<Employee, "id">) => void;
   onDelete?: () => void;
@@ -214,6 +224,8 @@ function EmployeeSheet({
   const stunden = Math.max(0, Math.round(Number(d.hours) || 0));
   const info = splitInfo(stunden, d.employmentType);
   const tooMany = stunden > WARN_HOURS;
+  const periodError = employmentPeriodError(d.startDate, d.endDate);
+  const monthHours = monthlyTargetMinutesFor({...draftToEmployee(d), id: employee?.id ?? "preview"}, openDates) / 60;
 
   const alleTage = d.availableWeekdays.length === 0;
   const toggleWeekday = (key: WeekdayKey) => {
@@ -283,6 +295,17 @@ function EmployeeSheet({
           <div className={`text-xs ${info.ok ? "text-slate-500" : "text-rose-600"}`}>
             {info.text}
             {tooMany && <span className="text-amber-600 font-medium"> · ⚠ &gt;{WARN_HOURS}h/tháng</span>}
+          </div>
+
+          <div className="space-y-3">
+            <label className="block min-w-0 text-xs text-slate-600">Ngày vào làm
+              <input type="date" className={`${inputClass} block w-full min-w-0 mt-1`} value={d.startDate} onChange={e => set("startDate", e.target.value)} />
+            </label>
+            <label className="block min-w-0 text-xs text-slate-600">Ngày nghỉ việc (ngày làm cuối)
+              <input type="date" className={`${inputClass} block w-full min-w-0 mt-1`} value={d.endDate} onChange={e => set("endDate", e.target.value)} />
+            </label>
+            <p className="text-xs text-slate-500">Định mức tháng đang chọn: {monthHours}h. Tính theo số ngày quán mở trong thời gian làm việc, làm tròn giờ. Bỏ trống ngày = không giới hạn.</p>
+            {periodError && <p role="alert" className="text-xs text-rose-600">{periodError}</p>}
           </div>
 
           <div className="border-t border-slate-100 pt-3">
@@ -364,7 +387,8 @@ function EmployeeSheet({
                   Huỷ
                 </button>
                 <button
-                  onClick={() => onSave(draftToEmployee(d))}
+                  disabled={Boolean(periodError)}
+                  onClick={() => { if (!periodError) onSave(draftToEmployee(d)); }}
                   className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
                 >
                   Lưu

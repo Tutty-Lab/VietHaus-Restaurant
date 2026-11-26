@@ -43,6 +43,8 @@ export type Employee = {
   employmentType: EmploymentType;
   /** Monatliches Soll in Minuten (Integer). 176 h => 10560. */
   targetMinutes: number;
+  startDate?: string;
+  endDate?: string;
   /** Wochentage, an denen die Person geplant werden darf. Leer = alle Tage. */
   availableWeekdays?: WeekdayKey[];
   /** Höchstzahl der Arbeitstage je Woche. Fehlt = nur die Sechs-Tage-Regel. */

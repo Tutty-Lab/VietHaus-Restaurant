@@ -332,7 +332,7 @@ export function ScheduleTab({
                       {employmentShortVi(emp.employmentType)}
                     </td>
                     <td className="border-b border-slate-100 px-2 py-1 text-right text-slate-500">
-                      {emp.targetMinutes / 60}h
+                      {(sum?.targetMinutes ?? emp.targetMinutes) / 60}h
                     </td>
                     {gridDates.map((d) => {
                       const shift = shiftMap.get(`${emp.id}#${d}`);

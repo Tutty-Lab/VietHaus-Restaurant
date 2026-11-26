@@ -13,7 +13,7 @@ export function Dashboard({ store }: { store: UseScheduleReturn }) {
   const vz = schedule.employees.filter((e) => e.employmentType === "VOLLZEIT").length;
   const tz = schedule.employees.filter((e) => e.employmentType === "TEILZEIT").length;
   const mj = schedule.employees.filter((e) => e.employmentType === "MINIJOB").length;
-  const targetMin = schedule.employees.reduce((s, e) => s + e.targetMinutes, 0);
+  const targetMin = validation.summaries.reduce((s, e) => s + e.targetMinutes, 0);
   const plannedMin = schedule.shifts.reduce((s, x) => s + x.paidMinutes, 0);
   const notGenerated = schedule.shifts.length === 0;
 

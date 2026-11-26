@@ -1,3 +1,5 @@
+import { monthlyTargetMinutesFor } from "./employeePeriod";
+import { mayWorkOn } from "./availability";
 // ============================================================================
 // Validierung des Dienstplans gegen alle geforderten Regeln.
 // ============================================================================
@@ -38,6 +40,7 @@ const MAX_CONSECUTIVE_DAYS = 6;
 export function validateSchedule(
   employees: Employee[],
   shifts: Shift[],
+  openDates?: readonly string[],
 ): ValidationResult {
   const errors: ValidationError[] = [];
 
@@ -130,10 +133,12 @@ export function validateSchedule(
     const assignedMinutes = empShifts.reduce((sum, s) => sum + s.paidMinutes, 0);
     const maxRun = maxConsecutiveRun(empShifts.map((s) => s.date));
 
-    if (assignedMinutes !== emp.targetMinutes) {
+    const target = openDates ? monthlyTargetMinutesFor(emp, openDates) : emp.targetMinutes;
+    for (const shift of empShifts) if (!mayWorkOn(emp, shift.date)) errors.push({employeeId: emp.id, date: shift.date, message: `${emp.name}: ca ngoài ngày được làm.`});
+    if (assignedMinutes !== target) {
       errors.push({
         employeeId: emp.id,
-        message: `${emp.name}: chưa đạt giờ định mức: ${assignedMinutes / 60} h thay vì ${emp.targetMinutes / 60} h.`,
+        message: `${emp.name}: chưa đạt giờ định mức: ${assignedMinutes / 60} h thay vì ${target / 60} h.`,
       });
     }
     if (maxRun > MAX_CONSECUTIVE_DAYS) {
@@ -146,8 +151,8 @@ export function validateSchedule(
     summaries.push({
       employee: emp,
       assignedMinutes,
-      targetMinutes: emp.targetMinutes,
-      diffMinutes: assignedMinutes - emp.targetMinutes,
+      targetMinutes: target,
+      diffMinutes: assignedMinutes - target,
       maxConsecutiveDays: maxRun,
       shiftCount: empShifts.length,
     });

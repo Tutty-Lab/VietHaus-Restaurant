@@ -1,3 +1,4 @@
+import { monthlyTargetMinutesFor } from "./employeePeriod";
 // ============================================================================
 // Deterministischer, greedy Scheduler (kein Solver, kein KI-Modell).
 //
@@ -1496,7 +1497,7 @@ function buildUnmetMessage(
  */
 export function generateSchedule(input: GenerateInput): Shift[] {
   shiftIdCounter = 0;
-  const { year, month, workHours, employees } = input;
+  const { year, month, workHours } = input;
   const holidays = input.holidays ?? publicHolidays(year);
   const overrides = input.overrides ?? {};
 
@@ -1507,6 +1508,8 @@ export function generateSchedule(input: GenerateInput): Shift[] {
     dayOf(isoDate).closed ? 0 : DAY_WEIGHTS[effKeyOf(isoDate)];
 
   const dates = datesOfMonth(year, month);
+  const openDates = dates.filter(d => !dayOf(d).closed);
+  const employees = input.employees.map(e => ({...e, targetMinutes: monthlyTargetMinutesFor(e, openDates)}));
   const totalTargetMin = employees.reduce((sum, e) => sum + e.targetMinutes, 0);
   const totalWeight = dates.reduce((sum, d) => sum + weightOf(d), 0);
 

@@ -1,3 +1,5 @@
+import { openDatesFor, updateEmployeeInSchedule } from "../lib/employeePeriod";
+import { isEmployedOn, mayWorkOn } from "../lib/availability";
 // ============================================================================
 // Zentrales State-Management (ohne externe Bibliothek). Kapselt Schedule,
 // LocalStorage-Persistenz und alle Aktionen (Generieren, Bearbeiten, Reset).
@@ -151,8 +153,8 @@ export function useSchedule() {
   }, [schedule, originalShifts, passwordHash]);
 
   const validation: ValidationResult = useMemo(
-    () => validateSchedule(schedule.employees, schedule.shifts),
-    [schedule.employees, schedule.shifts],
+    () => validateSchedule(schedule.employees, schedule.shifts, openDatesFor(schedule)),
+    [schedule.employees, schedule.shifts, schedule.year, schedule.month, schedule.workHours, schedule.dateOverrides],
   );
 
   /**
@@ -287,13 +289,7 @@ export function useSchedule() {
   }, []);
 
   const updateEmployee = useCallback((id: string, patch: Partial<Employee>) => {
-    setSchedule((s) => {
-      if (s.lockedAt) return s; // Monat gedruckt und gesperrt
-      return {
-        ...s,
-        employees: s.employees.map((e) => (e.id === id ? { ...e, ...patch } : e)),
-      };
-    });
+    setSchedule((s) => updateEmployeeInSchedule(s, id, patch));
   }, []);
 
   const removeEmployee = useCallback((id: string) => {
@@ -337,7 +333,7 @@ export function useSchedule() {
   const resetToOriginal = useCallback(() => {
     setSchedule((s) => {
       if (s.lockedAt) return s; // Monat gedruckt und gesperrt
-      return { ...s, shifts: originalShifts.map((sh) => ({ ...sh })) };
+      return { ...s, shifts: originalShifts.filter(sh => { const e = s.employees.find(e => e.id === sh.employeeId); return e && isEmployedOn(e, sh.date); }).map((sh) => ({ ...sh })) };
     });
   }, [originalShifts]);
 
@@ -395,6 +391,8 @@ export function useSchedule() {
     (employeeId: string, date: string, start: number, end: number, pause: number) => {
       setSchedule((s) => {
         if (s.lockedAt) return s; // Monat gedruckt und gesperrt
+        const employee = s.employees.find(e => e.id === employeeId);
+        if (!employee || !mayWorkOn(employee, date)) return s;
         const exists = s.shifts.some((sh) => sh.employeeId === employeeId && sh.date === date);
         if (exists) return s;
         return { ...s, shifts: [...s.shifts, createManualShift(employeeId, date, start, end, pause)] };
@@ -427,6 +425,8 @@ export function useSchedule() {
       if (s.lockedAt) return s; // Monat gedruckt und gesperrt
       const shift = s.shifts.find((sh) => sh.id === shiftId);
       if (!shift) return s;
+      const employee = s.employees.find(e => e.id === targetEmployeeId);
+      if (!employee || !mayWorkOn(employee, shift.date)) return s;
       const conflict = s.shifts.some(
         (sh) => sh.employeeId === targetEmployeeId && sh.date === shift.date,
       );

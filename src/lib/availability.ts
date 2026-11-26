@@ -22,5 +22,9 @@ export function worksOnWeekday(employee: Employee, isoDate: string): boolean {
 
 /** Darf diese Person an diesem Datum arbeiten? */
 export function mayWorkOn(employee: Employee, isoDate: string): boolean {
-  return worksOnWeekday(employee, isoDate);
+  return worksOnWeekday(employee, isoDate) && isEmployedOn(employee, isoDate);
+}
+
+export function isEmployedOn(employee: Employee, date: string): boolean {
+  return (!employee.startDate || date >= employee.startDate) && (!employee.endDate || date <= employee.endDate);
 }
