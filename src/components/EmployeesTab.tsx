@@ -7,7 +7,7 @@ import { WEEKDAY_SHORT_VI, type WeekdayKey } from "../lib/demand";
 import { employmentShortVi } from "../lib/employment";
 
 const inputClass =
-  "rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500";
+  "rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500";
 
 const WEEKDAY_ORDER: WeekdayKey[] = [
   "monday",
@@ -54,7 +54,7 @@ function draftFrom(emp?: Employee): Draft {
     employmentType: emp?.employmentType ?? "VOLLZEIT",
     hours: emp ? String(emp.targetMinutes / 60) : "176",
     availableWeekdays: emp?.availableWeekdays ?? [],
-    maxDays: emp?.maxDaysPerWeek ? String(emp.maxDaysPerWeek) : "",
+    maxDays: emp?.maxDaysPerWeek ? String(Math.min(6, emp.maxDaysPerWeek)) : "",
   };
 }
 
@@ -71,7 +71,7 @@ function draftToEmployee(d: Draft): Omit<Employee, "id"> {
       d.availableWeekdays.length === 0 || d.availableWeekdays.length === 7
         ? undefined
         : [...d.availableWeekdays],
-    maxDaysPerWeek: d.maxDays === "" || tage < 1 ? undefined : Math.min(7, Math.round(tage)),
+    maxDaysPerWeek: d.maxDays === "" || tage < 1 ? undefined : Math.min(6, Math.round(tage)),
   };
 }
 
@@ -203,201 +203,92 @@ function EmployeeSummaryRow({ emp, target }: { emp: Employee; target: number }) 
   );
 }
 
-function EmployeeSheet({
-  employee,
-  openDates,
-  onClose,
-  onSave,
-  onDelete,
-}: {
-  employee?: Employee;
-  openDates: string[];
-  onClose: () => void;
-  onSave: (felder: Omit<Employee, "id">) => void;
-  onDelete?: () => void;
+function Segmented<T extends string>({ value, options, onChange }: {
+  value: T; options: { value: T; label: string }[]; onChange: (value: T) => void;
+}) {
+  return <div className="flex gap-1 rounded-lg bg-slate-100 p-1">{options.map(option =>
+    <button key={option.value} type="button" aria-pressed={value === option.value} onClick={() => onChange(option.value)}
+      className={`flex-1 rounded-md px-2 py-2.5 text-sm font-medium ${value === option.value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>{option.label}</button>
+  )}</div>;
+}
+
+function EmployeeSheet({ employee, openDates, onClose, onSave, onDelete }: {
+  employee?: Employee; openDates: string[]; onClose: () => void;
+  onSave: (fields: Omit<Employee, "id">) => void; onDelete?: () => void;
 }) {
   const [d, setD] = useState<Draft>(() => draftFrom(employee));
-  const [loeschFrage, setLoeschFrage] = useState(false);
-
-  const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((prev) => ({ ...prev, [k]: v }));
-
-  const stunden = Math.max(0, Math.round(Number(d.hours) || 0));
-  const info = splitInfo(stunden, d.employmentType);
-  const tooMany = stunden > WARN_HOURS;
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [advanced, setAdvanced] = useState(Boolean(employee?.startDate || employee?.endDate));
+  const [showPeriod, setShowPeriod] = useState(Boolean(employee?.startDate || employee?.endDate));
+  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setD(prev => ({ ...prev, [key]: value }));
+  const monthHours = monthlyTargetMinutesFor({ ...draftToEmployee(d), id: employee?.id ?? "preview" }, openDates) / 60;
   const periodError = employmentPeriodError(d.startDate, d.endDate);
-  const monthHours = monthlyTargetMinutesFor({...draftToEmployee(d), id: employee?.id ?? "preview"}, openDates) / 60;
-
-  const alleTage = d.availableWeekdays.length === 0;
-  const toggleWeekday = (key: WeekdayKey) => {
-    const basis = alleTage ? WEEKDAY_ORDER : d.availableWeekdays;
-    set(
-      "availableWeekdays",
-      basis.includes(key) ? basis.filter((k) => k !== key) : [...basis, key],
-    );
+  const daysOff = WEEKDAY_ORDER.filter(day => d.availableWeekdays.length > 0 && !d.availableWeekdays.includes(day));
+  const hoursBad = !d.hours.trim() || !Number.isFinite(Number(d.hours)) || Number(d.hours) < 0 || !Number.isInteger(Number(d.hours));
+  const info = splitInfo(monthHours, d.employmentType);
+  const toggleDayOff = (day: WeekdayKey) => {
+    const nextOff = daysOff.includes(day) ? daysOff.filter(x => x !== day) : [...daysOff, day];
+    if (nextOff.length === 7) return;
+    set("availableWeekdays", nextOff.length ? WEEKDAY_ORDER.filter(x => !nextOff.includes(x)) : []);
   };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full sm:max-w-md max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-lg bg-white shadow-xl border border-slate-200"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-900">
-            {employee ? "Sửa nhân viên" : "Thêm nhân viên"}
-          </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">
-            ✕
-          </button>
-        </div>
-
-        <div className="px-4 py-3 space-y-4">
-          <label className="block">
-            <span className="text-xs text-slate-600">Tên</span>
-            <input
-              autoFocus={!employee}
-              className={`${inputClass} w-full mt-1`}
-              value={d.name}
-              onChange={(e) => set("name", e.target.value)}
-              placeholder="Tên nhân viên"
-            />
+  const sectionTitle = "text-sm font-semibold text-slate-900";
+  const labelClass = "mb-1.5 block text-xs font-medium text-slate-600";
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4" onClick={onClose}>
+    <div role="dialog" aria-modal="true" aria-labelledby="employee-sheet-title" onClick={event => event.stopPropagation()}
+      className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-slate-200 bg-white shadow-xl sm:max-w-lg sm:rounded-xl">
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3">
+        <h3 id="employee-sheet-title" className="font-semibold text-slate-900">{employee ? "Sửa nhân viên" : "Thêm nhân viên"}</h3>
+        <button type="button" aria-label="Đóng" onClick={onClose} className="rounded-lg px-3 py-2 text-slate-400 hover:bg-slate-100">✕</button>
+      </div>
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-4 py-4">
+        <section className="space-y-4">
+          <h4 className={sectionTitle}>Thông tin</h4>
+          <label className="block"><span className={labelClass}>Tên</span>
+            <input autoFocus={!employee} autoCapitalize="words" autoComplete="off" className={`${inputClass} w-full`} value={d.name} onChange={e => set("name", e.target.value)} placeholder="Tên nhân viên" />
           </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="text-xs text-slate-600">Hình thức</span>
-              <select
-                className={`${inputClass} w-full mt-1`}
-                value={d.employmentType}
-                onChange={(e) => set("employmentType", e.target.value as EmploymentType)}
-              >
-                <option value="VOLLZEIT">Toàn thời gian</option>
-                <option value="TEILZEIT">Bán thời gian</option>
-                <option value="MINIJOB">Minijob</option>
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-xs text-slate-600">Giờ định mức / tháng</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                step={1}
-                className={`${inputClass} w-full mt-1`}
-                value={d.hours}
-                onChange={(e) => set("hours", e.target.value)}
-              />
-            </label>
+          <div><span className={labelClass}>Hình thức</span>
+            <Segmented<EmploymentType> value={d.employmentType} onChange={v => set("employmentType",v)} options={[{value:"VOLLZEIT",label:"Toàn TG"},{value:"TEILZEIT",label:"Bán TG"},{value:"MINIJOB",label:"Minijob"}]} />
           </div>
-          <div className={`text-xs ${info.ok ? "text-slate-500" : "text-rose-600"}`}>
-            {info.text}
-            {tooMany && <span className="text-amber-600 font-medium"> · ⚠ &gt;{WARN_HOURS}h/tháng</span>}
-          </div>
-
-          <div className="space-y-3">
-            <label className="block min-w-0 text-xs text-slate-600">Ngày vào làm
-              <input type="date" className={`${inputClass} block w-full min-w-0 mt-1`} value={d.startDate} onChange={e => set("startDate", e.target.value)} />
-            </label>
-            <label className="block min-w-0 text-xs text-slate-600">Ngày nghỉ việc (ngày làm cuối)
-              <input type="date" className={`${inputClass} block w-full min-w-0 mt-1`} value={d.endDate} onChange={e => set("endDate", e.target.value)} />
-            </label>
-            <p className="text-xs text-slate-500">Định mức tháng đang chọn: {monthHours}h. Tính theo số ngày quán mở trong thời gian làm việc, làm tròn giờ. Bỏ trống ngày = không giới hạn.</p>
-            {periodError && <p role="alert" className="text-xs text-rose-600">{periodError}</p>}
-          </div>
-
-          <div className="border-t border-slate-100 pt-3">
-            <div className="text-xs text-slate-600 mb-1.5">
-              Ngày làm trong tuần
-              {alleTage && <span className="text-slate-400"> — bỏ trống = làm mọi ngày</span>}
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {WEEKDAY_ORDER.map((key) => {
-                const an = alleTage || d.availableWeekdays.includes(key);
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => toggleWeekday(key)}
-                    className={`rounded px-2 py-1 text-xs border transition-colors ${
-                      an
-                        ? "bg-slate-800 text-white border-slate-800"
-                        : "bg-white text-slate-400 border-slate-200 line-through"
-                    }`}
-                  >
-                    {WEEKDAY_SHORT_VI[key]}
-                  </button>
-                );
-              })}
-            </div>
-            <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
-              Số ngày làm mỗi tuần
-              <input
-                type="number"
-                min={1}
-                max={7}
-                placeholder="—"
-                className={`${inputClass} w-16`}
-                value={d.maxDays}
-                onChange={(e) => set("maxDays", e.target.value)}
-              />
-              <span className="text-slate-400">bỏ trống = không giới hạn</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="sticky bottom-0 bg-white border-t border-slate-200 px-4 py-3">
-          {loeschFrage ? (
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-slate-600">Xoá nhân viên này?</span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setLoeschFrage(false)}
-                  className="rounded px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
-                >
-                  Không
-                </button>
-                <button
-                  onClick={onDelete}
-                  className="rounded bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700"
-                >
-                  Xoá
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-3">
-              {onDelete ? (
-                <button
-                  onClick={() => setLoeschFrage(true)}
-                  className="text-rose-600 hover:text-rose-800 text-sm font-medium"
-                >
-                  Xoá
-                </button>
-              ) : (
-                <span />
-              )}
-              <div className="flex gap-2">
-                <button
-                  onClick={onClose}
-                  className="rounded px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-                >
-                  Huỷ
-                </button>
-                <button
-                  disabled={Boolean(periodError)}
-                  onClick={() => { if (!periodError) onSave(draftToEmployee(d)); }}
-                  className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-                >
-                  Lưu
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+          <label className="block"><span className={`${labelClass} flex flex-wrap justify-between gap-1`}><span>Giờ hợp đồng / tháng</span><span className="font-normal text-slate-400">tháng này {periodError || hoursBad ? "—" : `${monthHours}h`} · {info.text}</span></span>
+            <input type="number" inputMode="numeric" min={0} step={1} className={`${inputClass} w-full`} value={d.hours} onChange={e => set("hours",e.target.value)} />
+          </label>
+          {hoursBad && <p role="alert" className="text-xs text-rose-600">Nhập số giờ nguyên từ 0 trở lên.</p>}
+          {Number(d.hours) > WARN_HOURS && <p className="text-xs text-amber-700">Hợp đồng trên {WARN_HOURS}h/tháng; kiểm tra số ngày có thể làm.</p>}
+        </section>
+        <section className="rounded-lg border border-slate-200">
+          <button type="button" aria-expanded={advanced} onClick={() => setAdvanced(v=>!v)} className="flex w-full items-center justify-between px-3 py-3 text-left text-sm font-medium text-slate-700">
+            <span>Cài đặt nâng cao<span className="block text-xs font-normal text-slate-400">Hợp đồng, ngày nghỉ cố định, ngày vào làm / nghỉ việc</span></span><span aria-hidden="true">{advanced ? "▾" : "▸"}</span>
+          </button>
+          {advanced && <div className="space-y-6 border-t border-slate-100 px-3 py-4">
+            <section className="space-y-3"><h4 className={sectionTitle}>Hợp đồng</h4>
+              <p className="text-xs text-slate-500">Giờ theo tháng. Ngày vào/nghỉ việc tự điều chỉnh định mức của tháng đang chọn.</p>
+              <span className={labelClass}>Số ngày làm / tuần <span className="font-normal text-slate-400">· Tự = tự động</span></span>
+              <div className="grid grid-cols-7 gap-1">{["","1","2","3","4","5","6"].map(n=><button key={n || "auto"} type="button" aria-pressed={d.maxDays===n} onClick={()=>set("maxDays",n)} className={`rounded-md border py-2.5 text-sm font-medium ${d.maxDays===n ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{n || "Tự"}</button>)}</div>
+            </section>
+            <section className="space-y-3"><h4 className={sectionTitle}>Ngày nghỉ cố định</h4>
+              <div className="grid grid-cols-7 gap-1">{WEEKDAY_ORDER.map(day=><button key={day} type="button" aria-pressed={daysOff.includes(day)} disabled={daysOff.length===6 && !daysOff.includes(day)} onClick={()=>toggleDayOff(day)} className={`rounded-md border py-2.5 text-sm font-medium disabled:opacity-40 ${daysOff.includes(day) ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{WEEKDAY_SHORT_VI[day]}</button>)}</div>
+              <p className="text-xs text-slate-400">{daysOff.length ? `Không xếp ca vào ${daysOff.map(day=>WEEKDAY_SHORT_VI[day]).join(", ")}.` : "Không chọn = làm được mọi ngày quán mở."}</p>
+            </section>
+            <section className="space-y-3"><h4 className={sectionTitle}>Thời gian làm việc</h4>
+              {!showPeriod ? <button type="button" onClick={()=>setShowPeriod(true)} className="w-full rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-left text-sm text-slate-600">+ Ngày vào làm / nghỉ việc <span className="text-slate-400">(nếu không làm cả tháng)</span></button> : <>
+                <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2">{([['startDate','Ngày vào làm'],['endDate','Ngày nghỉ việc']] as const).map(([key,label])=><div key={key} className="min-w-0">
+                  <div className={`${labelClass} flex justify-between`}><label htmlFor={`employee-${key}`}>{label}</label>{d[key] && <button type="button" onClick={()=>set(key,"")} className="font-normal underline">xoá</button>}</div>
+                  <input id={`employee-${key}`} type="date" aria-invalid={!!periodError} aria-describedby={periodError ? "employee-period-error" : undefined} min={key==='endDate' ? d.startDate || undefined : undefined} max={key==='startDate' ? d.endDate || undefined : undefined} className={`${inputClass} block w-full min-w-0 max-w-full`} value={d[key]} onChange={e=>set(key,e.target.value)} />
+                </div>)}</div>
+                <p className="text-xs text-slate-400">Bỏ trống = từ đầu tháng / vẫn đang làm. Khi lưu, ca ngoài khoảng này sẽ được bỏ. Định mức tính theo số ngày quán mở, làm tròn giờ. Bấm Tạo lịch để phân bổ lại.</p>
+              </>}
+              {periodError && <p id="employee-period-error" role="alert" className="text-sm text-rose-600">{periodError}</p>}
+            </section>
+          </div>}
+        </section>
+      </div>
+      <div className="shrink-0 border-t border-slate-200 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {confirmDelete ? <div className="flex items-center justify-between gap-3"><span className="text-sm text-slate-600">Xoá nhân viên này?</span><div className="flex gap-2"><button onClick={()=>setConfirmDelete(false)} className="rounded-lg px-4 py-2.5 text-sm">Không</button><button onClick={onDelete} className="rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-medium text-white">Xoá</button></div></div> : <div className="flex items-center gap-2">
+          {onDelete && <button onClick={()=>setConfirmDelete(true)} className="rounded-lg px-3 py-2.5 text-sm font-medium text-rose-600 hover:bg-rose-50">Xoá</button>}
+          <button onClick={onClose} className="ml-auto rounded-lg px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
+          <button disabled={!d.name.trim() || !!periodError || hoursBad} onClick={()=>{if(d.name.trim() && !periodError && !hoursBad) onSave(draftToEmployee(d));}} className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40">Lưu</button>
+        </div>}
       </div>
     </div>
-  );
+  </div>;
 }
